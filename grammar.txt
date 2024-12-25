@@ -1,0 +1,80 @@
+STAT = P0 ;
+STAT = =< P0 ;
+STAT = !!! ;
+STAT = => ;
+STAT = if (P0) BLOCK ELIF ;
+STAT = if (P0) BLOCK ELIF else BLOCK ;
+STAT = for (P0) BLOCK ;
+STAT = foreach (V) BLOCK ;
+STAT = forever BLOCK ;
+STAT = while (P0) BLOCK;
+STAT = match (P0) CASE ;
+STAT = try BLOCK except BLOCK ;
+STAT = shard (ARGS) BLOCK ; -> V
+STAT = aggr (MEMBERS)
+STAT = get (P0)
+
+MEMBERS = P0: P0; MEMBERS
+MEMBERS = e
+
+ARGS = P0; ARGS
+ARGS = e
+
+CASE = BLOCK ; CASE' 
+CASE' = BLOCK ; CASE' 
+CASE' = e
+
+ELIF = else if (P0) BLOCK ELIF
+ELIF = e
+
+BLOCK = STAT BLOCK'
+BLOCK' = STAT BLOCK'
+BLOCK' = e  
+
+
+P0 = P1 P0'
+P0' = -> P1 P0'
+P0' = e
+P1 = P2 P1'
+P1' = || P2 P1'
+P1' = e
+P2 = P3 P2'
+P2' = && P3 P2'
+P2' = e
+P3 = P4
+P3 = ! P4
+P4 = P5 P4'
+P4' = == P5 P4'
+P4' = != P5 P4'
+P4' = < P5 P4'
+P4' = > P5 P4'
+P4' = <= P5 P4'
+P4' = >= P5 P4'
+P4' = e
+P5 = P6 P5'
+P5' = + P6 P5'
+P5' = - P6 P5'
+P5' = e
+P6 = P7 P6'
+P6' = * P7 P6'
+P6' = / P7 P6'
+P6' = e
+P7 = P8 P7'
+P7' = ** P8 P7'
+P7' = e
+P8 = ( P0 )
+P8 = V
+V = literal
+V = id
+V = # id
+V = #! id ANNO'
+V = [ literal ITEM' ]
+V = { literal ITEM' }
+ITEM' = , literal ITEM'
+ITEM' = e
+
+ANNO' = a ANNO'
+ANNO' = e
+
+
+
