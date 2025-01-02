@@ -4,6 +4,7 @@ use std::{
     collections::HashMap,
     rc::{Rc, Weak},
 };
+use std::cell::Ref;
 
 use crate::{lexer::Token::*, tree::Node};
 
@@ -57,7 +58,7 @@ impl PartialOrd for Effect {
 }
 
 struct Table {
-    parent: Weak<RefCell<Table>>,
+    parent: Option<Weak<RefCell<Table>>>,
     map: HashMap<String, Symbol>,
 }
 
@@ -70,7 +71,11 @@ trait TableRc {
 impl TableRc for Rc<RefCell<Table>> {
     fn get(&self, key: String) -> Option<Symbol> {
         if key == "_".to_owned() {
-            Some(Symbol::Table(self.borrow().parent.upgrade().unwrap()))
+            match self.borrow().parent {
+                Some(parent) => Some(Symbol::Table(parent.upgrade().unwrap())),
+                None => None
+            }
+
         } else {
             self.borrow().map.get(&key).cloned()
         }
@@ -82,7 +87,7 @@ impl TableRc for Rc<RefCell<Table>> {
 
     fn add_table(&mut self, key: Option<String>) -> Rc<RefCell<Table>> {
         let table = Table {
-            parent: Rc::downgrade(self),
+            parent: Some(Rc::downgrade(self)),
             map: HashMap::new(),
         };
 
@@ -220,7 +225,153 @@ impl ASTChecker {
                     None => panic!("Name Error"),
                 }
             }
-            _ => todo!(),
+            If => {
+                let mut e = Effect::Pure;
+
+                for child in node.children {
+                    let child_meaning = self.check(child);
+
+                    if let (_Block, _) | (_, Type::Bool) = (child.borrow().token.0, child_meaning.t) {
+                        if child_meaning.e > e {
+                            e = child_meaning.e;
+                        }
+                    }
+                }
+
+                Meaning {
+                    v: Value::Nothing,
+                    t: Type::None,
+                    e
+                }
+            },
+            For => {
+                let mut e = Effect::Pure;
+
+                let iter = node.children.iter().map(|x| self.check(x.clone()));
+
+                for _ in 0..3 {
+                    if let Meaning { e: cond_effect, v: _, t: Type::Shard(_, _) } = iter.next().unwrap() {
+                        if cond_effect < e {
+                            e = cond_effect;
+                        }
+                    } else {
+                        panic!("Type Error")
+                    }
+                }
+
+                let block_effect = iter.next().unwrap().e;
+                if block_effect < e {
+                    e = block_effect;
+                }
+
+                Meaning {
+                    v: Value::Nothing,
+                    t: Type::None,
+                    e
+                }
+            }
+            ForEach => {
+                let mut e = Effect::Pure;
+
+                let iter = node.children.iter().map(|x| self.check(x.clone()));
+
+                if let Meaning { e: cond_effect, v: _, t: Type::List(_) | Type::Tuple(_) | Type::String } = iter.next().unwrap() {
+                    if cond_effect < e {
+                        e = cond_effect;
+                    }
+                } else {
+                    panic!("Type Error")
+                }
+
+                let block_effect = iter.next().unwrap().e;
+                if block_effect < e {
+                    e = block_effect;
+                }
+
+                Meaning {
+                    v: Value::Nothing,
+                    t: Type::None,
+                    e
+                }
+            }
+            Forever => {
+                let mut e = Effect::Pure;
+
+                let iter = node.children.iter().map(|x| self.check(x.clone()));
+
+                let block_effect = iter.next().unwrap().e;
+                if block_effect < e {
+                    e = block_effect;
+                }
+
+                Meaning {
+                    v: Value::Nothing,
+                    t: Type::None,
+                    e
+                }
+            }
+            While => {
+                let mut e = Effect::Pure;
+
+                let iter = node.children.iter().map(|x| self.check(x.clone()));
+
+                if let Meaning { e: cond_effect, v: _, t: Type::Shard(_, _) } = iter.next().unwrap() {
+                    if cond_effect < e {
+                        e = cond_effect;
+                    }
+                } else {
+                    panic!("Type Error")
+                }
+
+                let block_effect = iter.next().unwrap().e;
+                if block_effect < e {
+                    e = block_effect;
+                }
+
+                Meaning {
+                    v: Value::Nothing,
+                    t: Type::None,
+                    e
+                }
+            },
+            Match => {
+                let mut e = Effect::Pure;
+                let mut match_t: Option<Type> = None;
+
+                for child in node.children {
+                    let child_meaning = self.check(child);
+
+                    if !matches!(child.borrow().token.0, _Block) {
+                        let case_t = self.check(child).t;
+
+                        match match_t {
+                            None => {
+                                match_t = Some(case_t);
+                            }
+                            Some(match_t) if case_t != match_t => panic!("Type Error"),
+                            _ => ()
+                        };
+                    }
+
+                    if child_meaning.e > e {
+                        e = child_meaning.e;
+                    }
+                }
+
+                Meaning {
+                    v: Value::Nothing,
+                    t: Type::None,
+                    e
+                }
+            },
+            Shard => {
+                let pr_local = Rc::clone(&self.local);
+                self.local = Rc::new(RefCell::new(Table {
+                    parent: None,
+                    map: HashMap::new()
+                }));
+            }
+            _ => todo!()
         }
     }
 }
