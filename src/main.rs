@@ -1,5 +1,6 @@
 use clap::Parser;
 use std::fs;
+mod astchecker;
 mod lexer;
 mod parser;
 mod tree;

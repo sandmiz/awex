@@ -3,20 +3,20 @@ use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
 pub struct Node {
-    pub token: Token,
+    pub token: (Token, String),
     pub children: Vec<Rc<RefCell<Node>>>,
     pub parent: Option<Weak<RefCell<Node>>>,
 }
 
 pub trait NodeRc {
-    fn insert(&self, token: Token) -> Rc<RefCell<Node>>;
+    fn insert(&self, token: Token, value: String) -> Rc<RefCell<Node>>;
     fn extend(&self, nodes: Vec<Rc<RefCell<Node>>>);
     fn step_back(&self, n: u8) -> Rc<RefCell<Node>>;
 }
 
 impl std::fmt::Debug for Node {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(formatter, "{:?}", self.token);
+        let res = write!(formatter, "{:?}", self.token);
 
         if &self.children.len() > &0 {
             let children: Vec<String> = self
@@ -31,14 +31,14 @@ impl std::fmt::Debug for Node {
             )?;
         }
 
-        Ok(())
+        res
     }
 }
 
 impl NodeRc for Rc<RefCell<Node>> {
-    fn insert(&self, token: Token) -> Rc<RefCell<Node>> {
+    fn insert(&self, token: Token, value: String) -> Rc<RefCell<Node>> {
         let node = Node {
-            token: token,
+            token: (token, value),
             children: vec![],
             parent: Some(Rc::downgrade(self)),
         };
@@ -70,9 +70,9 @@ impl NodeRc for Rc<RefCell<Node>> {
     }
 }
 
-pub fn new_node(token: Token) -> Rc<RefCell<Node>> {
+pub fn new_node(token: Token, value: String) -> Rc<RefCell<Node>> {
     let node = Node {
-        token: token,
+        token: (token, value),
         children: vec![],
         parent: None,
     };

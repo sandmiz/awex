@@ -12,10 +12,9 @@ pub enum Token {
     _SOF,
     _List,
     _Tuple,
-    _Args,
-    _Anno,
     _Block,
     _Path,
+    _Lambda,
     _EOF,
     ID,
     Str,
@@ -35,7 +34,6 @@ pub enum Token {
     Except,
     Case,
     Shard,
-    Aggr,
     Mod,
     Get,
     As,
@@ -45,9 +43,13 @@ pub enum Token {
     RSquare,
     LCurly,
     RCurly,
+    LLambda,
+    MLambda,
+    RLambda,
     Dot,
     Comma,
     Colon,
+    Quest,
     Semicolon,
     RArrow,
     FatRArrow,
@@ -65,6 +67,13 @@ pub enum Token {
     Asterisk,
     TiltBar,
     Power,
+    Dart,
+    PlusDart,
+    MinusDart,
+    MulDart,
+    DivDart,
+    PowDart,
+    Amph,
     Hash,
     HashExclam,
     HashQuest,
@@ -88,19 +97,17 @@ pub enum State {
     Comment,
 }
 
-impl<'a> Iterator for Lexer<'a> {
-    type Item = Token;
-
-    fn next(&mut self) -> Option<Self::Item> {
+impl<'a> Lexer<'a> {
+    pub fn next(&mut self) -> (Token, String) {
         let ch = self.source.next();
-        let mut ret: Option<Self::Item> = None;
+        let mut ret: Option<(Token, String)> = None;
 
         self.state = match ch {
             Some(ch) => match self.state {
                 State::Initial => {
                     self.buf = ch.to_string();
 
-                    if ch.is_ascii_alphabetic() {
+                    if ch.is_ascii_alphabetic() || ch == '_' {
                         State::Letter
                     } else if ch.is_ascii_digit() {
                         if ch == '0' {
@@ -126,7 +133,7 @@ impl<'a> Iterator for Lexer<'a> {
 
                         State::Annotation
                     } else if ch.is_ascii() {
-                        ret = Some(Token::ID);
+                        ret = Some((Token::ID, self.buf.clone()));
 
                         if ch.is_ascii_punctuation() {
                             self.buf = ch.to_string();
@@ -155,7 +162,7 @@ impl<'a> Iterator for Lexer<'a> {
                     } else if ch == '.' {
                         State::Float
                     } else if ch.is_ascii() {
-                        ret = Some(Token::Number);
+                        ret = Some((Token::Number, self.buf.clone()));
 
                         if ch.is_ascii_alphabetic() {
                             self.buf = ch.to_string();
@@ -174,8 +181,8 @@ impl<'a> Iterator for Lexer<'a> {
                 }
                 State::Symbol => {
                     if ch.is_ascii_punctuation()
-                        && !"{}()[]\"`".contains(&self.buf)
-                        && !"{}()[]\"`".contains(ch)
+                        && !"{}()[]\"`;".contains(&self.buf)
+                        && !"{}()[]\"`;".contains(ch)
                     {
                         self.buf.push(ch);
 
@@ -184,7 +191,7 @@ impl<'a> Iterator for Lexer<'a> {
                         self.buf = String::new();
 
                         if ch == '"' {
-                            ret = Some(Token::Str);
+                            ret = Some((Token::Str, self.buf.clone()));
                             State::Initial
                         } else {
                             self.buf.push(ch);
@@ -197,40 +204,54 @@ impl<'a> Iterator for Lexer<'a> {
                             State::Initial
                         }
                     } else if ch.is_ascii() {
-                        ret = Some(match self.buf.as_str() {
-                            "+" => Token::Plus,
-                            "-" => Token::Minus,
-                            "*" => Token::Asterisk,
-                            "/" => Token::TiltBar,
-                            "**" => Token::Power,
-                            ":" => Token::Colon,
-                            ";" => Token::Semicolon,
-                            "," => Token::Comma,
-                            "." => Token::Dot,
-                            "!" => Token::Exclam,
-                            "||" => Token::Or,
-                            "&&" => Token::And,
-                            "==" => Token::Equal,
-                            "!=" => Token::NEqual,
-                            "<" => Token::SmallThan,
-                            "<=" => Token::SmallEq,
-                            ">" => Token::GreatThan,
-                            ">=" => Token::GreatEq,
-                            "=<" => Token::Mailbox,
-                            "=>" => Token::FatRArrow,
-                            "->" => Token::RArrow,
-                            "!!!" => Token::Break,
-                            "#" => Token::Hash,
-                            "#!" => Token::HashExclam,
-                            "#?" => Token::HashQuest,
-                            "(" => Token::LRound,
-                            "[" => Token::LSquare,
-                            "{" => Token::LCurly,
-                            ")" => Token::RRound,
-                            "]" => Token::RSquare,
-                            "}" => Token::RCurly,
-                            _ => panic!("Unexpected chain: {}", self.buf),
-                        });
+                        ret = Some((
+                            match self.buf.as_str() {
+                                "+" => Token::Plus,
+                                "-" => Token::Minus,
+                                "*" => Token::Asterisk,
+                                "/" => Token::TiltBar,
+                                "**" => Token::Power,
+                                "#->" => Token::Dart,
+                                "#-+" => Token::PlusDart,
+                                "#--" => Token::MinusDart,
+                                "#-*" => Token::MulDart,
+                                "#-/" => Token::DivDart,
+                                "#-**" => Token::PowDart,
+                                ":" => Token::Colon,
+                                ";" => Token::Semicolon,
+                                "," => Token::Comma,
+                                "." => Token::Dot,
+                                "!" => Token::Exclam,
+                                "?" => Token::Quest,
+                                "||" => Token::Or,
+                                "&&" => Token::And,
+                                "==" => Token::Equal,
+                                "!=" => Token::NEqual,
+                                "<" => Token::SmallThan,
+                                "<=" => Token::SmallEq,
+                                ">" => Token::GreatThan,
+                                ">=" => Token::GreatEq,
+                                "=<" => Token::Mailbox,
+                                "=>" => Token::FatRArrow,
+                                "->" => Token::RArrow,
+                                "!!!" => Token::Break,
+                                "&" => Token::Amph,
+                                "#" => Token::Hash,
+                                "#!" => Token::HashExclam,
+                                "#?" => Token::HashQuest,
+                                "(" => Token::LRound,
+                                "[" => Token::LSquare,
+                                "{" => Token::LCurly,
+                                ")" => Token::RRound,
+                                "]" => Token::RSquare,
+                                "}" => Token::RCurly,
+                                "|=" => Token::LLambda,
+                                "=|=" => Token::MLambda,
+                                "=|" => Token::RLambda,
+                                _ => panic!("Unexpected chain: {}", self.buf),
+                            },
+                            self.buf.clone(),
+                        ));
 
                         self.buf = ch.to_string();
                         if ch.is_ascii_alphabetic() {
@@ -256,27 +277,29 @@ impl<'a> Iterator for Lexer<'a> {
 
                         State::Chain
                     } else if ch.is_ascii() {
-                        ret = Some(match self.buf.as_str() {
-                            "if" => Token::If,
-                            "else" => Token::Else,
-                            "elif" => Token::Elif,
-                            "for" => Token::For,
-                            "foreach" => Token::ForEach,
-                            "forever" => Token::Forever,
-                            "while" => Token::While,
-                            "match" => Token::Match,
-                            "case" => Token::Case,
-                            "mod" => Token::Mod,
-                            "get" => Token::Get,
-                            "as" => Token::As,
-                            "try" => Token::Try,
-                            "except" => Token::Except,
-                            "shard" => Token::Shard,
-                            "aggr" => Token::Aggr,
-                            "true" | "false" => Token::Bool,
-                            "nothing" => Token::Nothing,
-                            _ => Token::ID,
-                        });
+                        ret = Some((
+                            match self.buf.as_str() {
+                                "if" => Token::If,
+                                "else" => Token::Else,
+                                "elif" => Token::Elif,
+                                "for" => Token::For,
+                                "foreach" => Token::ForEach,
+                                "forever" => Token::Forever,
+                                "while" => Token::While,
+                                "match" => Token::Match,
+                                "case" => Token::Case,
+                                "mod" => Token::Mod,
+                                "get" => Token::Get,
+                                "as" => Token::As,
+                                "try" => Token::Try,
+                                "except" => Token::Except,
+                                "shard" => Token::Shard,
+                                "true" | "false" => Token::Bool,
+                                "nothing" => Token::Nothing,
+                                _ => Token::ID,
+                            },
+                            self.buf.clone(),
+                        ));
 
                         if ch.is_ascii_punctuation() {
                             self.buf = ch.to_string();
@@ -299,7 +322,7 @@ impl<'a> Iterator for Lexer<'a> {
                             State::Decimal
                         }
                     } else if ch.is_ascii() && !ch.is_ascii_alphabetic() {
-                        ret = Some(Token::Number);
+                        ret = Some((Token::Number, self.buf.clone()));
 
                         self.buf = ch.to_string();
                         if ch.is_ascii_punctuation() {
@@ -317,7 +340,7 @@ impl<'a> Iterator for Lexer<'a> {
 
                         State::Float
                     } else if ch.is_ascii() && !ch.is_ascii_alphabetic() {
-                        ret = Some(Token::Number);
+                        ret = Some((Token::Number, self.buf.clone()));
 
                         self.buf = ch.to_string();
                         if ch.is_ascii_punctuation() && ch != '.' {
@@ -335,7 +358,7 @@ impl<'a> Iterator for Lexer<'a> {
 
                         State::Hex
                     } else if ch.is_ascii() && !ch.is_ascii_alphabetic() {
-                        ret = Some(Token::Number);
+                        ret = Some((Token::Number, self.buf.clone()));
 
                         self.buf = ch.to_string();
                         if ch.is_ascii_punctuation() && ch != '.' {
@@ -353,7 +376,7 @@ impl<'a> Iterator for Lexer<'a> {
 
                         State::Octa
                     } else if ch.is_ascii() && !ch.is_ascii_alphabetic() {
-                        ret = Some(Token::Number);
+                        ret = Some((Token::Number, self.buf.clone()));
 
                         self.buf = ch.to_string();
                         if ch.is_ascii_punctuation() && ch != '.' {
@@ -371,7 +394,7 @@ impl<'a> Iterator for Lexer<'a> {
 
                         State::Binary
                     } else if ch.is_ascii() && !ch.is_ascii_alphabetic() {
-                        ret = Some(Token::Number);
+                        ret = Some((Token::Number, self.buf.clone()));
 
                         self.buf = ch.to_string();
                         if ch.is_ascii_punctuation() && ch != '.' {
@@ -385,9 +408,10 @@ impl<'a> Iterator for Lexer<'a> {
                 }
                 State::Str => {
                     if ch == '"' {
-                        ret = Some(Token::Str);
+                        ret = Some((Token::Str, self.buf.clone()));
                         State::Initial
                     } else {
+                        self.buf.push(ch);
                         State::Str
                     }
                 }
@@ -399,14 +423,14 @@ impl<'a> Iterator for Lexer<'a> {
                     }
                 }
                 State::Annotation => {
-                    if ch.is_ascii_alphanumeric() {
+                    if !ch.is_ascii_whitespace() && ch != ';' {
                         self.buf.push(ch);
 
                         State::Annotation
                     } else if ch.is_ascii() {
-                        ret = Some(Token::Annotation);
+                        ret = Some((Token::Annotation, self.buf.clone()));
 
-                        if ch.is_ascii_punctuation() {
+                        if ch == ';' {
                             self.buf = ch.to_string();
 
                             State::Symbol
@@ -418,11 +442,11 @@ impl<'a> Iterator for Lexer<'a> {
                     }
                 }
             },
-            None => return Some(Token::_EOF),
+            None => return (Token::_EOF, self.buf.clone()),
         };
 
         match ret {
-            Some(_) => ret,
+            Some(ret) => ret,
             None => self.next(),
         }
     }

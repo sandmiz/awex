@@ -12,14 +12,15 @@ use crate::{
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     cursor: Token,
+    buf: String,
     tree: Rc<RefCell<Node>>,
-    tree_cursor: Vec<Rc<RefCell<Node>>>,
+    tree_return: Vec<Rc<RefCell<Node>>>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(source: Chars<'a>) -> Self {
         let tree = Node {
-            token: _SOF,
+            token: (_SOF, String::new()),
             children: vec![],
             parent: None,
         };
@@ -31,8 +32,9 @@ impl<'a> Parser<'a> {
                 buf: String::new(),
             },
             cursor: _SOF,
+            buf: String::new(),
             tree: Rc::new(RefCell::new(tree)),
-            tree_cursor: vec![],
+            tree_return: vec![],
         }
     }
 
@@ -42,7 +44,7 @@ impl<'a> Parser<'a> {
                 self.tree
                     .borrow_mut()
                     .children
-                    .extend(self.tree_cursor.clone());
+                    .extend(self.tree_return.clone());
             } else {
                 panic!("Syntax Error")
             }
@@ -52,13 +54,14 @@ impl<'a> Parser<'a> {
     }
 
     fn adv_cursor(&mut self) -> Token {
-        self.cursor = self.lexer.next().unwrap();
+        (self.cursor, self.buf) = self.lexer.next();
 
         self.cursor
     }
 
     fn statement(&mut self) -> bool {
         if self.precedence0() {
+            println!("{:?}", self.cursor);
             if self.cursor == Semicolon {
                 true
             } else {
@@ -66,11 +69,11 @@ impl<'a> Parser<'a> {
             }
         } else if self.cursor == Mailbox {
             self.adv_cursor();
-            let mailbox = new_node(Mailbox);
+            let mailbox = new_node(Mailbox, self.buf.clone());
             if self.precedence0() {
-                mailbox.extend(self.tree_cursor.clone());
+                mailbox.extend(self.tree_return.clone());
                 if self.cursor == Semicolon {
-                    self.tree_cursor = vec![mailbox];
+                    self.tree_return = vec![mailbox];
                     true
                 } else {
                     panic!("Syntax Error")
@@ -80,39 +83,43 @@ impl<'a> Parser<'a> {
             }
         } else if self.cursor == Break {
             if self.adv_cursor() == Semicolon {
-                self.tree_cursor = vec![new_node(Break)];
+                self.tree_return = vec![new_node(Break, self.buf.clone())];
                 true
             } else {
                 panic!("Syntax Error")
             }
         } else if self.cursor == FatRArrow {
             if self.adv_cursor() == Semicolon {
-                self.tree_cursor = vec![new_node(FatRArrow)];
+                self.tree_return = vec![new_node(FatRArrow, self.buf.clone())];
                 true
             } else {
                 panic!("Syntax Error")
             }
         } else if self.cursor == If {
-            let if_tree = new_node(If);
+            let if_tree = new_node(If, self.buf.clone());
             if self.adv_cursor() == LRound {
                 self.adv_cursor();
                 if self.precedence0() {
-                    if_tree.extend(self.tree_cursor.clone());
+                    if_tree.extend(self.tree_return.clone());
                     if self.cursor == RRound {
                         self.adv_cursor();
                         if self.block() {
-                            if_tree.insert(_Block).extend(self.tree_cursor.clone());
+                            if_tree
+                                .insert(_Block, String::new())
+                                .extend(self.tree_return.clone());
                             if self.elif() {
-                                if_tree.extend(self.tree_cursor.clone());
+                                if_tree.extend(self.tree_return.clone());
                                 if self.cursor == Semicolon {
-                                    self.tree_cursor = vec![if_tree];
+                                    self.tree_return = vec![if_tree];
                                     true
                                 } else if self.cursor == Else {
                                     self.adv_cursor();
                                     if self.block() {
-                                        if_tree.insert(_Block).extend(self.tree_cursor.clone());
+                                        if_tree
+                                            .insert(_Block, String::new())
+                                            .extend(self.tree_return.clone());
                                         if self.cursor == Semicolon {
-                                            self.tree_cursor = vec![if_tree];
+                                            self.tree_return = vec![if_tree];
                                             true
                                         } else {
                                             panic!("Syntax Error")
@@ -139,173 +146,35 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == For {
-            let for_tree = new_node(For);
+            let for_tree = new_node(For, self.buf.clone());
             if self.adv_cursor() == LRound {
                 self.adv_cursor();
-                if self.precedence0() {
-                    for_tree.extend(self.tree_cursor.clone());
-                    if self.cursor == RRound {
+                if self.value() {
+                    for_tree.extend(self.tree_return.clone());
+                    if self.cursor == Semicolon {
                         self.adv_cursor();
-                        if self.block() {
-                            for_tree.insert(_Block).extend(self.tree_cursor.clone());
+                        if self.precedence0() {
+                            for_tree.extend(self.tree_return.clone());
+                            if self.cursor == Semicolon {
+                                self.adv_cursor();
+                                if self.precedence0() {
+                                    for_tree.extend(self.tree_return.clone());
+                                    if self.cursor == RRound {
+                                        self.adv_cursor();
+                                        if self.block() {
+                                            for_tree
+                                                .insert(_Block, String::new())
+                                                .extend(self.tree_return.clone());
 
-                            if self.cursor == Semicolon {
-                                self.tree_cursor = vec![for_tree];
-                                true
-                            } else {
-                                panic!("Syntax Error")
-                            }
-                        } else {
-                            panic!("Syntax Error")
-                        }
-                    } else {
-                        panic!("Syntax Error")
-                    }
-                } else {
-                    panic!("Syntax Error")
-                }
-            } else {
-                panic!("Syntax Error")
-            }
-        } else if self.cursor == ForEach {
-            let foreach_tree = new_node(ForEach);
-            if self.adv_cursor() == LRound {
-                self.adv_cursor();
-                if self.precedence0() {
-                    foreach_tree.extend(self.tree_cursor.clone());
-                    if self.cursor == RRound {
-                        self.adv_cursor();
-                        if self.block() {
-                            foreach_tree.insert(_Block).extend(self.tree_cursor.clone());
-                            if self.cursor == Semicolon {
-                                self.tree_cursor = vec![foreach_tree];
-                                true
-                            } else {
-                                panic!("Syntax Error")
-                            }
-                        } else {
-                            panic!("Syntax Error")
-                        }
-                    } else {
-                        panic!("Syntax Error")
-                    }
-                } else {
-                    panic!("Syntax Error")
-                }
-            } else {
-                panic!("Syntax Error")
-            }
-        } else if self.cursor == Forever {
-            let forever_tree = new_node(Forever);
-
-            self.adv_cursor();
-            if self.block() {
-                forever_tree.insert(_Block).extend(self.tree_cursor.clone());
-                if self.cursor == Semicolon {
-                    self.tree_cursor = vec![forever_tree];
-                    true
-                } else {
-                    panic!("Syntax Error")
-                }
-            } else {
-                panic!("Syntax Error")
-            }
-        } else if self.cursor == While {
-            let while_tree = new_node(While);
-            if self.adv_cursor() == LRound {
-                self.adv_cursor();
-                if self.precedence0() {
-                    while_tree.extend(self.tree_cursor.clone());
-                    if self.cursor == RRound {
-                        self.adv_cursor();
-                        if self.block() {
-                            while_tree.insert(_Block).extend(self.tree_cursor.clone());
-                            if self.cursor == Semicolon {
-                                self.tree_cursor = vec![while_tree];
-                                true
-                            } else {
-                                panic!("Syntax Error")
-                            }
-                        } else {
-                            panic!("Syntax Error")
-                        }
-                    } else {
-                        panic!("Syntax Error")
-                    }
-                } else {
-                    panic!("Syntax Error")
-                }
-            } else {
-                panic!("Syntax Error")
-            }
-        } else if self.cursor == Match {
-            let match_tree = new_node(Match);
-            if self.adv_cursor() == LRound {
-                self.adv_cursor();
-                if self.precedence0() {
-                    match_tree.extend(self.tree_cursor.clone());
-                    if self.cursor == RRound {
-                        self.adv_cursor();
-                        if self.case() {
-                            match_tree.extend(self.tree_cursor.clone());
-                            if self.cursor == Semicolon {
-                                self.tree_cursor = vec![match_tree];
-                                true
-                            } else {
-                                panic!("Syntax Error")
-                            }
-                        } else {
-                            panic!("Syntax Error")
-                        }
-                    } else {
-                        panic!("Syntax Error")
-                    }
-                } else {
-                    panic!("Syntax Error")
-                }
-            } else {
-                panic!("Syntax Error")
-            }
-        } else if self.cursor == Try {
-            let try_tree = new_node(Try);
-            self.adv_cursor();
-            if self.block() {
-                try_tree.insert(_Block).extend(self.tree_cursor.clone());
-                if self.cursor == Except {
-                    self.adv_cursor();
-                    if self.block() {
-                        try_tree.insert(_Block).extend(self.tree_cursor.clone());
-                        if self.cursor == Semicolon {
-                            self.tree_cursor = vec![try_tree];
-                            true
-                        } else {
-                            panic!("Syntax Error")
-                        }
-                    } else {
-                        panic!("Syntax Error")
-                    }
-                } else {
-                    panic!("Syntax Error")
-                }
-            } else {
-                panic!("Syntax Error")
-            }
-        } else if self.cursor == Shard {
-            let shard_tree = new_node(Shard);
-            if self.adv_cursor() == LRound {
-                self.adv_cursor();
-                if self.args() {
-                    shard_tree.insert(_Args).extend(self.tree_cursor.clone());
-                    if self.cursor == RRound {
-                        self.adv_cursor();
-                        if self.block() {
-                            shard_tree.insert(_Block).extend(self.tree_cursor.clone());
-                            if self.cursor == Semicolon {
-                                if self.adv_cursor() == FatRArrow {
-                                    self.adv_cursor();
-                                    if self.value() {
-                                        self.tree_cursor = vec![shard_tree];
-                                        true
+                                            if self.cursor == Semicolon {
+                                                self.tree_return = vec![for_tree];
+                                                true
+                                            } else {
+                                                panic!("Syntax Error")
+                                            }
+                                        } else {
+                                            panic!("Syntax Error")
+                                        }
                                     } else {
                                         panic!("Syntax Error")
                                     }
@@ -327,18 +196,192 @@ impl<'a> Parser<'a> {
             } else {
                 panic!("Syntax Error")
             }
-        } else if self.cursor == Aggr {
-            let aggr_tree = new_node(Aggr);
+        } else if self.cursor == ForEach {
+            let foreach_tree = new_node(ForEach, self.buf.clone());
+            if self.adv_cursor() == LRound {
+                self.adv_cursor();
+                if self.precedence0() {
+                    foreach_tree.extend(self.tree_return.clone());
+                    if self.cursor == RRound {
+                        self.adv_cursor();
+                        if self.block() {
+                            foreach_tree
+                                .insert(_Block, String::new())
+                                .extend(self.tree_return.clone());
+                            if self.cursor == Semicolon {
+                                self.tree_return = vec![foreach_tree];
+                                true
+                            } else {
+                                panic!("Syntax Error")
+                            }
+                        } else {
+                            panic!("Syntax Error")
+                        }
+                    } else {
+                        panic!("Syntax Error")
+                    }
+                } else {
+                    panic!("Syntax Error")
+                }
+            } else {
+                panic!("Syntax Error")
+            }
+        } else if self.cursor == Forever {
+            let forever_tree = new_node(Forever, self.buf.clone());
 
+            self.adv_cursor();
+            if self.block() {
+                forever_tree
+                    .insert(_Block, String::new())
+                    .extend(self.tree_return.clone());
+                if self.cursor == Semicolon {
+                    self.tree_return = vec![forever_tree];
+                    true
+                } else {
+                    panic!("Syntax Error")
+                }
+            } else {
+                panic!("Syntax Error")
+            }
+        } else if self.cursor == While {
+            let while_tree = new_node(While, self.buf.clone());
+            if self.adv_cursor() == LRound {
+                self.adv_cursor();
+                if self.precedence0() {
+                    while_tree.extend(self.tree_return.clone());
+                    if self.cursor == RRound {
+                        self.adv_cursor();
+                        if self.block() {
+                            while_tree
+                                .insert(_Block, String::new())
+                                .extend(self.tree_return.clone());
+                            if self.cursor == Semicolon {
+                                self.tree_return = vec![while_tree];
+                                true
+                            } else {
+                                panic!("Syntax Error")
+                            }
+                        } else {
+                            panic!("Syntax Error")
+                        }
+                    } else {
+                        panic!("Syntax Error")
+                    }
+                } else {
+                    panic!("Syntax Error")
+                }
+            } else {
+                panic!("Syntax Error")
+            }
+        } else if self.cursor == Match {
+            let match_tree = new_node(Match, self.buf.clone());
+            if self.adv_cursor() == LRound {
+                self.adv_cursor();
+                if self.precedence0() {
+                    match_tree.extend(self.tree_return.clone());
+                    if self.cursor == RRound {
+                        self.adv_cursor();
+                        if self.case() {
+                            match_tree.extend(self.tree_return.clone());
+                            if self.cursor == Semicolon {
+                                self.tree_return = vec![match_tree];
+                                true
+                            } else {
+                                panic!("Syntax Error")
+                            }
+                        } else {
+                            panic!("Syntax Error")
+                        }
+                    } else {
+                        panic!("Syntax Error")
+                    }
+                } else {
+                    panic!("Syntax Error")
+                }
+            } else {
+                panic!("Syntax Error")
+            }
+        } else if self.cursor == Try {
+            let try_tree = new_node(Try, self.buf.clone());
+            self.adv_cursor();
+            if self.block() {
+                try_tree
+                    .insert(_Block, String::new())
+                    .extend(self.tree_return.clone());
+                if self.cursor == Except {
+                    self.adv_cursor();
+                    if self.block() {
+                        try_tree
+                            .insert(_Block, String::new())
+                            .extend(self.tree_return.clone());
+                        if self.cursor == Semicolon {
+                            self.tree_return = vec![try_tree];
+                            true
+                        } else {
+                            panic!("Syntax Error")
+                        }
+                    } else {
+                        panic!("Syntax Error")
+                    }
+                } else {
+                    panic!("Syntax Error")
+                }
+            } else {
+                panic!("Syntax Error")
+            }
+        } else if self.cursor == Shard {
+            let shard_tree = new_node(Shard, self.buf.clone());
             if self.adv_cursor() == LRound {
                 self.adv_cursor();
                 if self.args() {
-                    aggr_tree.extend(self.tree_cursor.clone());
-
+                    shard_tree
+                        .insert(_Block, String::new())
+                        .extend(self.tree_return.clone());
                     if self.cursor == RRound {
-                        if self.adv_cursor() == Semicolon {
-                            self.tree_cursor = vec![aggr_tree];
-                            true
+                        if self.adv_cursor() == FatRArrow {
+                            if self.adv_cursor() == LRound {
+                                if self.args() {
+                                    shard_tree
+                                        .insert(_Block, String::new())
+                                        .extend(self.tree_return.clone());
+                                    if self.cursor == RRound {
+                                        self.adv_cursor();
+                                        if self.block() {
+                                            shard_tree
+                                                .insert(_Block, String::new())
+                                                .extend(self.tree_return.clone());
+                                            if self.cursor == Semicolon {
+                                                if self.adv_cursor() == RArrow {
+                                                    self.adv_cursor();
+                                                    if self.def() {
+                                                        shard_tree.extend(self.tree_return.clone());
+                                                        if self.cursor == Semicolon {
+                                                            self.tree_return = vec![shard_tree];
+                                                            true
+                                                        } else {
+                                                            panic!("Syntax Error")
+                                                        }
+                                                    } else {
+                                                        panic!("Syntax Error")
+                                                    }
+                                                } else {
+                                                    panic!("Syntax Error")
+                                                }
+                                            } else {
+                                                panic!("Syntax Error")
+                                            }
+                                        } else {
+                                            panic!("Syntax Error")
+                                        }
+                                    } else {
+                                        panic!("Syntax Error")
+                                    }
+                                } else {
+                                    panic!("Syntax Error")
+                                }
+                            } else {
+                                panic!("Syntax Error")
+                            }
                         } else {
                             panic!("Syntax Error")
                         }
@@ -352,14 +395,14 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == Mod {
-            let mod_tree = new_node(Mod);
+            let mod_tree = new_node(Mod, self.buf.clone());
 
             if self.adv_cursor() == ID {
                 self.adv_cursor();
                 if self.block() {
-                    mod_tree.extend(self.tree_cursor.clone());
+                    mod_tree.extend(self.tree_return.clone());
                     if self.cursor == Semicolon {
-                        self.tree_cursor = vec![mod_tree];
+                        self.tree_return = vec![mod_tree];
                         true
                     } else {
                         panic!("Syntax Error")
@@ -371,18 +414,18 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == Get {
-            let get_tree = new_node(Get);
+            let get_tree = new_node(Get, self.buf.clone());
 
             if self.adv_cursor() == Str {
-                get_tree.insert(Str);
+                get_tree.insert(Str, self.buf.clone());
                 if self.adv_cursor() == Semicolon {
-                    self.tree_cursor = vec![get_tree];
+                    self.tree_return = vec![get_tree];
                     true
                 } else if self.cursor == As {
                     if self.adv_cursor() == Str {
-                        get_tree.insert(Str);
+                        get_tree.insert(Str, self.buf.clone());
                         if self.adv_cursor() == Semicolon {
-                            self.tree_cursor = vec![get_tree];
+                            self.tree_return = vec![get_tree];
                             true
                         } else {
                             panic!("Syntax Error")
@@ -397,19 +440,19 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else {
-            self.tree_cursor = vec![];
+            self.tree_return = vec![];
             false
         }
     }
 
     fn args(&mut self) -> bool {
-        if self.precedence0() {
-            let mut args = self.tree_cursor.clone();
+        if self.def() {
+            let mut args = self.tree_return.clone();
             if self.cursor == Semicolon {
                 self.adv_cursor();
                 if self.args() {
-                    args.extend(self.tree_cursor.clone());
-                    self.tree_cursor = args;
+                    args.extend(self.tree_return.clone());
+                    self.tree_return = args;
                     true
                 } else {
                     panic!("Syntax Error")
@@ -418,7 +461,7 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else {
-            self.tree_cursor = vec![];
+            self.tree_return = vec![];
             true
         }
     }
@@ -428,16 +471,16 @@ impl<'a> Parser<'a> {
             if self.adv_cursor() == LRound {
                 self.adv_cursor();
                 if self.value() {
-                    let mut cases = self.tree_cursor.clone();
+                    let mut cases = self.tree_return.clone();
                     if self.cursor == RRound {
                         self.adv_cursor();
                         if self.block() {
-                            cases.extend(self.tree_cursor.clone());
+                            cases.extend(self.tree_return.clone());
                             if self.cursor == Semicolon {
                                 self.adv_cursor();
                                 if self.case() {
-                                    cases.extend(self.tree_cursor.clone());
-                                    self.tree_cursor = cases;
+                                    cases.extend(self.tree_return.clone());
+                                    self.tree_return = cases;
                                     true
                                 } else {
                                     panic!("Syntax Error")
@@ -458,7 +501,7 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else {
-            self.tree_cursor = vec![];
+            self.tree_return = vec![];
             true
         }
     }
@@ -469,16 +512,16 @@ impl<'a> Parser<'a> {
             if self.adv_cursor() == LRound {
                 self.adv_cursor();
                 if self.precedence0() {
-                    elifs.extend(self.tree_cursor.clone());
+                    elifs.extend(self.tree_return.clone());
                     if self.cursor == RRound {
                         self.adv_cursor();
                         if self.block() {
-                            let elif_block = new_node(_Block);
-                            elif_block.extend(self.tree_cursor.clone());
+                            let elif_block = new_node(_Block, String::new());
+                            elif_block.extend(self.tree_return.clone());
                             elifs.push(elif_block);
                             if self.elif() {
-                                elifs.extend(self.tree_cursor.clone());
-                                self.tree_cursor = elifs;
+                                elifs.extend(self.tree_return.clone());
+                                self.tree_return = elifs;
                                 self.adv_cursor();
                                 true
                             } else {
@@ -497,24 +540,24 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else {
-            self.tree_cursor = vec![];
+            self.tree_return = vec![];
             true
         }
     }
 
     fn block(&mut self) -> bool {
         if self.statement() {
-            let mut block = self.tree_cursor.clone();
+            let mut block = self.tree_return.clone();
             if self.block() {
-                block.extend(self.tree_cursor.clone());
-                self.tree_cursor = block;
+                block.extend(self.tree_return.clone());
+                self.tree_return = block;
                 self.adv_cursor();
                 true
             } else {
                 panic!("Syntax Error")
             }
         } else {
-            self.tree_cursor = vec![];
+            self.tree_return = vec![];
             true
         }
     }
@@ -527,22 +570,42 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else {
-            self.tree_cursor = vec![];
+            self.tree_return = vec![];
             false
         }
     }
 
     fn precedence0prime(&mut self) -> bool {
         if self.cursor == RArrow {
-            let push = new_node(RArrow);
+            let push = new_node(RArrow, self.buf.clone());
 
-            push.extend(self.tree_cursor.clone());
+            push.extend(self.tree_return.clone());
 
             self.adv_cursor();
-            if self.precedence0() {
-                push.extend(self.tree_cursor.clone());
+            if self.precedence1() {
+                push.extend(self.tree_return.clone());
 
-                self.tree_cursor = vec![push];
+                self.tree_return = vec![push];
+                if self.precedence0prime() {
+                    true
+                } else {
+                    panic!("Syntax Error")
+                }
+            } else {
+                panic!("Syntax Error")
+            }
+        } else if [Dart, PlusDart, MinusDart, MulDart, DivDart, PowDart].contains(&self.cursor)
+            && self.tree_return[0].borrow().token.0 == _Path
+        {
+            let dart = new_node(self.cursor.clone(), self.buf.clone());
+
+            dart.extend(self.tree_return.clone());
+
+            self.adv_cursor();
+            if self.precedence1() {
+                dart.extend(self.tree_return.clone());
+
+                self.tree_return = vec![dart];
                 true
             } else {
                 panic!("Syntax Error")
@@ -566,16 +629,20 @@ impl<'a> Parser<'a> {
 
     fn precedence1prime(&mut self) -> bool {
         if self.cursor == Or {
-            let or = new_node(Or);
+            let or = new_node(Or, self.buf.clone());
 
-            or.extend(self.tree_cursor.clone());
+            or.extend(self.tree_return.clone());
 
             self.adv_cursor();
-            if self.precedence1() {
-                or.extend(self.tree_cursor.clone());
+            if self.precedence2() {
+                or.extend(self.tree_return.clone());
 
-                self.tree_cursor = vec![or];
-                true
+                self.tree_return = vec![or];
+                if self.precedence0prime() {
+                    true
+                } else {
+                    panic!("Syntax Error")
+                }
             } else {
                 panic!("Syntax Error")
             }
@@ -598,16 +665,16 @@ impl<'a> Parser<'a> {
 
     fn precedence2prime(&mut self) -> bool {
         if self.cursor == And {
-            let and = new_node(And);
+            let and = new_node(And, self.buf.clone());
 
-            and.extend(self.tree_cursor.clone());
+            and.extend(self.tree_return.clone());
 
             self.adv_cursor();
             if self.precedence3() {
-                if self.precedence2prime() {
-                    and.extend(self.tree_cursor.clone());
+                and.extend(self.tree_return.clone());
 
-                    self.tree_cursor = vec![and];
+                self.tree_return = vec![and];
+                if self.precedence2prime() {
                     true
                 } else {
                     panic!("Syntax Error")
@@ -626,12 +693,12 @@ impl<'a> Parser<'a> {
         } else if self.cursor == Exclam {
             self.adv_cursor();
 
-            let not = new_node(Exclam);
+            let not = new_node(Exclam, self.buf.clone());
 
             if self.precedence4() {
-                not.extend(self.tree_cursor.clone());
+                not.extend(self.tree_return.clone());
 
-                self.tree_cursor = vec![not];
+                self.tree_return = vec![not];
                 true
             } else {
                 panic!("Syntax Error")
@@ -655,16 +722,16 @@ impl<'a> Parser<'a> {
 
     fn precedence4prime(&mut self) -> bool {
         if [Equal, NEqual, GreatThan, GreatEq, SmallThan, SmallEq].contains(&self.cursor) {
-            let eq = new_node(self.cursor);
+            let eq = new_node(self.cursor, self.buf.clone());
 
-            eq.extend(self.tree_cursor.clone());
+            eq.extend(self.tree_return.clone());
 
             self.adv_cursor();
             if self.precedence5() {
-                if self.precedence4prime() {
-                    eq.extend(self.tree_cursor.clone());
+                eq.extend(self.tree_return.clone());
 
-                    self.tree_cursor = vec![eq];
+                self.tree_return = vec![eq];
+                if self.precedence4prime() {
                     true
                 } else {
                     panic!("Syntax Error")
@@ -691,16 +758,16 @@ impl<'a> Parser<'a> {
 
     fn precedence5prime(&mut self) -> bool {
         if [Plus, Minus].contains(&self.cursor) {
-            let add = new_node(self.cursor);
+            let add = new_node(self.cursor, self.buf.clone());
 
-            add.extend(self.tree_cursor.clone());
+            add.extend(self.tree_return.clone());
 
             self.adv_cursor();
             if self.precedence6() {
-                if self.precedence5prime() {
-                    add.extend(self.tree_cursor.clone());
+                add.extend(self.tree_return.clone());
 
-                    self.tree_cursor = vec![add];
+                self.tree_return = vec![add];
+                if self.precedence5prime() {
                     true
                 } else {
                     panic!("Syntax Error")
@@ -727,16 +794,16 @@ impl<'a> Parser<'a> {
 
     fn precedence6prime(&mut self) -> bool {
         if [Asterisk, TiltBar].contains(&self.cursor) {
-            let mul = new_node(self.cursor);
+            let mul = new_node(self.cursor, self.buf.clone());
 
-            mul.extend(self.tree_cursor.clone());
+            mul.extend(self.tree_return.clone());
 
             self.adv_cursor();
             if self.precedence7() {
-                if self.precedence6prime() {
-                    mul.extend(self.tree_cursor.clone());
+                mul.extend(self.tree_return.clone());
 
-                    self.tree_cursor = vec![mul];
+                self.tree_return = vec![mul];
+                if self.precedence6prime() {
                     true
                 } else {
                     panic!("Syntax Error")
@@ -763,16 +830,16 @@ impl<'a> Parser<'a> {
 
     fn precedence7prime(&mut self) -> bool {
         if self.cursor == Power {
-            let pow = new_node(Power);
+            let pow = new_node(Power, self.buf.clone());
 
-            pow.extend(self.tree_cursor.clone());
+            pow.extend(self.tree_return.clone());
 
             self.adv_cursor();
             if self.precedence8() {
                 if self.precedence7prime() {
-                    pow.extend(self.tree_cursor.clone());
+                    pow.extend(self.tree_return.clone());
 
-                    self.tree_cursor = vec![pow];
+                    self.tree_return = vec![pow];
                     true
                 } else {
                     panic!("Syntax Error")
@@ -800,67 +867,67 @@ impl<'a> Parser<'a> {
         } else if self.value() {
             true
         } else {
-            self.tree_cursor = vec![];
+            self.tree_return = vec![];
             false
         }
     }
 
     fn value(&mut self) -> bool {
         if [Number, Str, Bool, Nothing].contains(&self.cursor) {
-            self.tree_cursor = vec![new_node(self.cursor)];
+            self.tree_return = vec![new_node(self.cursor, self.buf.clone())];
             self.adv_cursor();
             true
         } else if self.cursor == ID {
-            let id_tree = new_node(_Path);
-            id_tree.extend(vec![new_node(ID)]);
+            let id_tree = new_node(_Path, String::new());
+            id_tree.extend(vec![new_node(ID, self.buf.clone())]);
             self.adv_cursor();
             if self.path() {
-                id_tree.extend(self.tree_cursor.clone());
+                id_tree.extend(self.tree_return.clone());
             }
-            self.tree_cursor = vec![id_tree];
+            self.tree_return = vec![id_tree];
             true
         } else if self.cursor == Hash {
-            let assign = new_node(Hash);
+            let assign = new_node(Hash, self.buf.clone());
             if self.adv_cursor() == ID {
-                let id_tree = assign.insert(_Path);
-                id_tree.insert(ID);
+                let id_tree = assign.insert(_Path, self.buf.clone());
+                id_tree.insert(ID, self.buf.clone());
                 self.adv_cursor();
                 if self.path() {
-                    id_tree.extend(self.tree_cursor.clone());
+                    id_tree.extend(self.tree_return.clone());
                 }
 
-                self.tree_cursor = vec![assign];
+                self.tree_return = vec![assign];
                 true
             } else {
                 panic!("Syntax Error")
             }
-        } else if self.cursor == HashExclam {
-            let def = new_node(HashExclam);
+        } else if self.cursor == Amph {
+            let assign = new_node(Amph, self.buf.clone());
             if self.adv_cursor() == ID {
-                def.insert(ID);
-
+                let id_tree = assign.insert(_Path, self.buf.clone());
+                id_tree.insert(ID, self.buf.clone());
                 self.adv_cursor();
-                if self.anno() {
-                    let anno = def.insert(_Anno);
-                    anno.extend(self.tree_cursor.clone());
-                    self.tree_cursor = vec![def];
-                    true
-                } else {
-                    panic!("Syntax Error")
+                if self.path() {
+                    id_tree.extend(self.tree_return.clone());
                 }
+
+                self.tree_return = vec![assign];
+                true
             } else {
                 panic!("Syntax Error")
             }
+        } else if self.def() {
+            true
         } else if self.cursor == LSquare {
             if [Number, Str, Bool, Nothing].contains(&self.adv_cursor()) {
                 self.adv_cursor();
                 if self.item() {
-                    let list = new_node(_List);
+                    let list = new_node(_List, String::new());
 
-                    list.extend(self.tree_cursor.clone());
+                    list.extend(self.tree_return.clone());
 
                     if self.adv_cursor() == RSquare {
-                        self.tree_cursor = vec![list];
+                        self.tree_return = vec![list];
 
                         self.adv_cursor();
                         true
@@ -877,12 +944,12 @@ impl<'a> Parser<'a> {
             if [Number, Str, Bool, Nothing].contains(&self.adv_cursor()) {
                 self.adv_cursor();
                 if self.item() {
-                    let tuple = new_node(_Tuple);
+                    let tuple = new_node(_Tuple, String::new());
 
-                    tuple.extend(self.tree_cursor.clone());
+                    tuple.extend(self.tree_return.clone());
 
                     if self.adv_cursor() == RCurly {
-                        self.tree_cursor = vec![tuple];
+                        self.tree_return = vec![tuple];
 
                         self.adv_cursor();
                         true
@@ -895,8 +962,35 @@ impl<'a> Parser<'a> {
             } else {
                 panic!("Syntax Error")
             }
+        } else if self.cursor == LLambda {
+            let lambda = new_node(_Lambda, String::new());
+
+            self.adv_cursor();
+            if self.args() {
+                lambda.insert(_Block, String::new()).extend(self.tree_return.clone());
+                if self.cursor == MLambda {
+                    self.adv_cursor();
+                    if self.precedence0() {
+                        lambda.extend(self.tree_return.clone());
+
+                        if self.cursor == RLambda {
+                            self.tree_return = vec![lambda];
+                            self.adv_cursor();
+                            true
+                        } else {
+                            panic!("Syntax Error")
+                        }
+                    } else {
+                        panic!("Syntax Error")
+                    }
+                } else {
+                    panic!("Syntax Error")
+                }
+            } else {
+                panic!("Syntax Error")
+            }
         } else {
-            self.tree_cursor = vec![];
+            self.tree_return = vec![];
             false
         }
     }
@@ -904,13 +998,13 @@ impl<'a> Parser<'a> {
     fn item(&mut self) -> bool {
         if self.cursor == Comma {
             if [Number, Str, Bool, Nothing].contains(&self.adv_cursor()) {
-                let mut items = vec![new_node(self.cursor)];
+                let mut items = vec![new_node(self.cursor, self.buf.clone())];
 
                 self.adv_cursor();
 
                 if self.item() {
-                    items.extend(self.tree_cursor.clone());
-                    self.tree_cursor = items;
+                    items.extend(self.tree_return.clone());
+                    self.tree_return = items;
                     true
                 } else {
                     panic!("Syntax Error")
@@ -919,7 +1013,7 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else {
-            self.tree_cursor = vec![];
+            self.tree_return = vec![];
             true
         }
     }
@@ -927,13 +1021,13 @@ impl<'a> Parser<'a> {
     fn path(&mut self) -> bool {
         if self.cursor == Colon {
             if self.adv_cursor() == ID {
-                let mut path = vec![new_node(self.cursor)];
+                let mut path = vec![new_node(self.cursor, self.buf.clone())];
 
                 self.adv_cursor();
 
                 if self.path() {
-                    path.extend(self.tree_cursor.clone());
-                    self.tree_cursor = path;
+                    path.extend(self.tree_return.clone());
+                    self.tree_return = path;
                     true
                 } else {
                     panic!("Syntax Error")
@@ -942,24 +1036,47 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else {
-            self.tree_cursor = vec![];
+            self.tree_return = vec![];
             true
+        }
+    }
+
+    fn def(&mut self) -> bool {
+        if self.cursor == HashExclam {
+            let def = new_node(HashExclam, self.buf.clone());
+            if self.adv_cursor() == ID {
+                def.insert(ID, self.buf.clone());
+
+                self.adv_cursor();
+                if self.anno() {
+                    def.extend(self.tree_return.clone());
+                    self.tree_return = vec![def];
+                    true
+                } else {
+                    panic!("Syntax Error")
+                }
+            } else {
+                panic!("Syntax Error")
+            }
+        } else {
+            self.tree_return = vec![];
+            false
         }
     }
 
     fn anno(&mut self) -> bool {
         if self.cursor == Annotation {
-            let mut annos = vec![new_node(Annotation)];
+            let mut annos = vec![new_node(Annotation, self.buf.clone())];
             self.adv_cursor();
             if self.anno() {
-                annos.extend(self.tree_cursor.clone());
-                self.tree_cursor = annos;
+                annos.extend(self.tree_return.clone());
+                self.tree_return = annos;
                 true
             } else {
                 panic!("Syntax Error")
             }
         } else {
-            self.tree_cursor = vec![];
+            self.tree_return = vec![];
             true
         }
     }

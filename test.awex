@@ -1,1 +1,1 @@
-1 == 2 -> "str" ** 2 -> true / 2 -> nothing || 2 -> bool + 2;
+8 -> |= #!x t@int; =|= 1 + x =| -> writebr;
