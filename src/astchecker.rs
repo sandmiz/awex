@@ -1,10 +1,11 @@
+use core::panic;
+use std::cell::Ref;
 use std::{
     cell::RefCell,
     cmp::Ordering,
     collections::HashMap,
     rc::{Rc, Weak},
 };
-use std::cell::Ref;
 
 use crate::{lexer::Token::*, tree::Node};
 
@@ -15,6 +16,10 @@ enum Value {
     Float(f32),
     String(String),
     Nothing,
+    Anno(char, String),
+    Mailbox(Type),
+    Continue,
+    Break,
 }
 
 #[derive(PartialEq, Clone)]
@@ -71,11 +76,10 @@ trait TableRc {
 impl TableRc for Rc<RefCell<Table>> {
     fn get(&self, key: String) -> Option<Symbol> {
         if key == "_".to_owned() {
-            match self.borrow().parent {
+            match self.borrow().parent.clone() {
                 Some(parent) => Some(Symbol::Table(parent.upgrade().unwrap())),
-                None => None
+                None => None,
             }
-
         } else {
             self.borrow().map.get(&key).cloned()
         }
@@ -209,14 +213,31 @@ impl ASTChecker {
                 let mut current_table = Rc::clone(&self.local);
 
                 for child in node.children.clone() {
-                    match current_table.get(child.borrow().token.1.clone()) {
-                        Some(Symbol::Table(table)) if meaning.is_none() => {
-                            current_table = table;
+                    let mut pass = false;
+
+                    while !pass {
+                        match current_table.get(child.borrow().token.1.clone()) {
+                            Some(Symbol::Table(table)) if meaning.is_none() => {
+                                pass = true;
+                                current_table = table;
+                            }
+                            Some(Symbol::Meaning(inner_meaning)) if meaning.is_none() => {
+                                meaning = Some(inner_meaning);
+                                pass = true;
+                            }
+                            None => {
+                                if let Some(Symbol::Table(table)) =
+                                    current_table.get("_".to_owned())
+                                {
+                                    current_table = table;
+                                } else if Rc::ptr_eq(&current_table, &self.global) {
+                                    current_table = Rc::clone(&self.global);
+                                } else {
+                                    panic!("Path Error");
+                                }
+                            }
+                            _ => panic!("Path Error"),
                         }
-                        Some(Symbol::Meaning(inner_meaning)) if meaning.is_none() => {
-                            meaning = Some(inner_meaning);
-                        }
-                        _ => panic!("Path Error"),
                     }
                 }
 
@@ -228,10 +249,11 @@ impl ASTChecker {
             If => {
                 let mut e = Effect::Pure;
 
-                for child in node.children {
-                    let child_meaning = self.check(child);
+                for child in node.children.clone() {
+                    let child_meaning = self.check(Rc::clone(&child));
 
-                    if let (_Block, _) | (_, Type::Bool) = (child.borrow().token.0, child_meaning.t) {
+                    if let (_Block, _) | (_, Type::Bool) = (child.borrow().token.0, child_meaning.t)
+                    {
                         if child_meaning.e > e {
                             e = child_meaning.e;
                         }
@@ -241,16 +263,21 @@ impl ASTChecker {
                 Meaning {
                     v: Value::Nothing,
                     t: Type::None,
-                    e
+                    e,
                 }
-            },
+            }
             For => {
                 let mut e = Effect::Pure;
 
-                let iter = node.children.iter().map(|x| self.check(x.clone()));
+                let mut iter = node.children.iter().map(|x| self.check(x.clone()));
 
                 for _ in 0..3 {
-                    if let Meaning { e: cond_effect, v: _, t: Type::Shard(_, _) } = iter.next().unwrap() {
+                    if let Meaning {
+                        e: cond_effect,
+                        v: _,
+                        t: Type::Shard(_, _),
+                    } = iter.next().unwrap()
+                    {
                         if cond_effect < e {
                             e = cond_effect;
                         }
@@ -267,15 +294,20 @@ impl ASTChecker {
                 Meaning {
                     v: Value::Nothing,
                     t: Type::None,
-                    e
+                    e,
                 }
             }
             ForEach => {
                 let mut e = Effect::Pure;
 
-                let iter = node.children.iter().map(|x| self.check(x.clone()));
+                let mut iter = node.children.iter().map(|x| self.check(x.clone()));
 
-                if let Meaning { e: cond_effect, v: _, t: Type::List(_) | Type::Tuple(_) | Type::String } = iter.next().unwrap() {
+                if let Meaning {
+                    e: cond_effect,
+                    v: _,
+                    t: Type::List(_) | Type::Tuple(_) | Type::String,
+                } = iter.next().unwrap()
+                {
                     if cond_effect < e {
                         e = cond_effect;
                     }
@@ -291,13 +323,13 @@ impl ASTChecker {
                 Meaning {
                     v: Value::Nothing,
                     t: Type::None,
-                    e
+                    e,
                 }
             }
             Forever => {
                 let mut e = Effect::Pure;
 
-                let iter = node.children.iter().map(|x| self.check(x.clone()));
+                let mut iter = node.children.iter().map(|x| self.check(x.clone()));
 
                 let block_effect = iter.next().unwrap().e;
                 if block_effect < e {
@@ -307,15 +339,20 @@ impl ASTChecker {
                 Meaning {
                     v: Value::Nothing,
                     t: Type::None,
-                    e
+                    e,
                 }
             }
             While => {
                 let mut e = Effect::Pure;
 
-                let iter = node.children.iter().map(|x| self.check(x.clone()));
+                let mut iter = node.children.iter().map(|x| self.check(x.clone()));
 
-                if let Meaning { e: cond_effect, v: _, t: Type::Shard(_, _) } = iter.next().unwrap() {
+                if let Meaning {
+                    e: cond_effect,
+                    v: _,
+                    t: Type::Shard(_, _),
+                } = iter.next().unwrap()
+                {
                     if cond_effect < e {
                         e = cond_effect;
                     }
@@ -331,15 +368,15 @@ impl ASTChecker {
                 Meaning {
                     v: Value::Nothing,
                     t: Type::None,
-                    e
+                    e,
                 }
-            },
+            }
             Match => {
                 let mut e = Effect::Pure;
                 let mut match_t: Option<Type> = None;
 
-                for child in node.children {
-                    let child_meaning = self.check(child);
+                for child in node.children.clone() {
+                    let child_meaning = self.check(Rc::clone(&child));
 
                     if !matches!(child.borrow().token.0, _Block) {
                         let case_t = self.check(child).t;
@@ -349,7 +386,7 @@ impl ASTChecker {
                                 match_t = Some(case_t);
                             }
                             Some(match_t) if case_t != match_t => panic!("Type Error"),
-                            _ => ()
+                            _ => (),
                         };
                     }
 
@@ -361,17 +398,189 @@ impl ASTChecker {
                 Meaning {
                     v: Value::Nothing,
                     t: Type::None,
-                    e
+                    e,
                 }
-            },
+            }
             Shard => {
+                self.check(Rc::clone(&node.children[3]));
+
                 let pr_local = Rc::clone(&self.local);
                 self.local = Rc::new(RefCell::new(Table {
                     parent: None,
-                    map: HashMap::new()
+                    map: HashMap::new(),
                 }));
+
+                let mut args: Vec<Type> = vec![];
+                let mut rets: Vec<Type> = vec![];
+                let mut e = Effect::Pure;
+
+                for arg in node.children[0].borrow().children.clone() {
+                    let arg_meaning = self.check(arg);
+
+                    if let Type::Shard(arg, _) = arg_meaning.t {
+                        args.extend(arg);
+                    }
+                }
+
+                for ret in node.children[1].borrow().children.clone() {
+                    let ret_meaning = self.check(ret);
+
+                    if let Type::Shard(ret, _) = ret_meaning.t {
+                        rets.extend(ret);
+                    }
+                }
+
+                let block_effect = self.check(Rc::clone(&node.children[2])).e;
+                if block_effect > e {
+                    e = block_effect;
+                }
+
+                self.local = pr_local;
+
+                Meaning {
+                    t: Type::None,
+                    v: Value::Nothing,
+                    e,
+                }
             }
-            _ => todo!()
+            Mailbox => {
+                let ret_meaning = self.check(Rc::clone(&node.children[0]));
+                Meaning {
+                    t: Type::None,
+                    v: Value::Mailbox(ret_meaning.t),
+                    e: ret_meaning.e,
+                }
+            }
+            FatRArrow => Meaning {
+                t: Type::None,
+                v: Value::Continue,
+                e: Effect::Pure,
+            },
+            Break => Meaning {
+                t: Type::None,
+                v: Value::Break,
+                e: Effect::Pure,
+            },
+            Mod => {
+                let mut e = Effect::Pure;
+
+                self.local = self
+                    .local
+                    .add_table(Some(node.children[0].borrow().token.1.clone()));
+
+                let block_effect = self.check(Rc::clone(&node.children[1])).e;
+                if block_effect > e {
+                    e = block_effect;
+                }
+
+                Meaning {
+                    t: Type::None,
+                    v: Value::Nothing,
+                    e,
+                }
+            }
+            Annotation => {
+                let mut chars = node.token.1.chars();
+
+                let key = chars.next().unwrap();
+
+                let val: String = chars.skip(2).collect();
+
+                Meaning {
+                    t: Type::None,
+                    v: Value::Anno(key, val),
+                    e: Effect::Pure,
+                }
+            }
+            Nothing => Meaning {
+                t: Type::None,
+                v: Value::Nothing,
+                e: Effect::Pure,
+            },
+            Bool => Meaning {
+                t: Type::Bool,
+                v: Value::Bool(node.token.1.parse().unwrap()),
+                e: Effect::Pure,
+            },
+            Number => Meaning {
+                t: Type::Int,
+                v: Value::Int(node.token.1.parse().unwrap()),
+                e: Effect::Pure,
+            },
+            Str => Meaning {
+                t: Type::String,
+                v: Value::String(node.token.1.clone()),
+                e: Effect::Pure,
+            },
+            HashExclam => {
+                let id = node.children[0].borrow().token.1.clone();
+                let mut e: Option<Effect> = None;
+                let mut t: Option<Type> = None;
+
+                for anno in node
+                    .children
+                    .iter()
+                    .skip(1)
+                    .map(|x| self.check(Rc::clone(x)))
+                {
+                    match anno.v {
+                        Value::Anno('e', effect) if e.is_none() => match effect.as_str() {
+                            "pure" => e = Some(Effect::Pure),
+                            "func" => e = Some(Effect::Func),
+                            "obs" => e = Some(Effect::Obs),
+                            "proc" => e = Some(Effect::Proc),
+                            _ => panic!("Annotation Error"),
+                        },
+                        Value::Anno('t', typ) if t.is_none() => match typ.as_str() {
+                            "bool" => t = Some(Type::Bool),
+                            "int" => t = Some(Type::Int),
+                            "float" => t = Some(Type::Float),
+                            "string" => t = Some(Type::String),
+                            _ => panic!("Annotation Error"),
+                        },
+                        _ => panic!("Annotation Error"),
+                    }
+                }
+
+                if t.is_none() || e.is_none() {
+                    panic!("Annotation Error")
+                }
+
+                self.local.set(
+                    id,
+                    Symbol::Meaning(Meaning {
+                        t: t.clone().unwrap(),
+                        v: Value::Nothing,
+                        e: e.unwrap(),
+                    }),
+                );
+
+                Meaning {
+                    t: Type::Shard(vec![t.clone().unwrap()], vec![t.unwrap()]),
+                    v: Value::Nothing,
+                    e: Effect::Func,
+                }
+            }
+            Hash => {
+                let var = self.check(Rc::clone(&node.children[0]));
+
+                Meaning {
+                    t: Type::Shard(vec![var.t.clone()], vec![var.t.clone()]),
+                    v: Value::Nothing,
+                    e: Effect::Func,
+                }
+            }
+            RArrow => {
+                let op1 = self.check(Rc::clone(&node.children[0]));
+                let op2 = self.check(Rc::clone(&node.children[1]));
+
+                match (op1.t, op2.t) {
+                    (Type::Tuple(o), Type::Shard(i, _)) if o == i => {}
+                    (o, Type::Shard(i, _)) if vec![o] == i => {}
+                    _ => {}
+                }
+            }
+            _ => todo!(),
         }
     }
 }
