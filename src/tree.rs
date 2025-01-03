@@ -10,7 +10,7 @@ pub struct Node {
 
 pub trait NodeRc {
     fn insert(&self, token: Token, value: String) -> Rc<RefCell<Node>>;
-    fn extend(&self, nodes: Vec<Rc<RefCell<Node>>>);
+    fn extend(&self, nodes: Vec<Rc<RefCell<Node>>>) -> Rc<RefCell<Node>>;
     fn step_back(&self, n: u8) -> Rc<RefCell<Node>>;
 }
 
@@ -49,12 +49,14 @@ impl NodeRc for Rc<RefCell<Node>> {
         rc
     }
 
-    fn extend(&self, nodes: Vec<Rc<RefCell<Node>>>) {
+    fn extend(&self, nodes: Vec<Rc<RefCell<Node>>>) -> Rc<RefCell<Node>> {
         for node in nodes.clone() {
             node.borrow_mut().parent = Some(Rc::downgrade(self));
         }
 
         self.borrow_mut().children.extend(nodes);
+
+        Rc::clone(self)
     }
 
     fn step_back(&self, n: u8) -> Rc<RefCell<Node>> {

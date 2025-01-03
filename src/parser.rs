@@ -13,7 +13,7 @@ pub struct Parser<'a> {
     lexer: Lexer<'a>,
     cursor: Token,
     buf: String,
-    tree: Rc<RefCell<Node>>,
+    pub tree: Rc<RefCell<Node>>,
     tree_return: Vec<Rc<RefCell<Node>>>,
 }
 
@@ -102,13 +102,19 @@ impl<'a> Parser<'a> {
                 if self.precedence0() {
                     if_tree.extend(self.tree_return.clone());
                     if self.cursor == RRound {
+                        println!("h {:?}", self.cursor);
                         self.adv_cursor();
+                        println!("g {:?}", self.cursor);
                         if self.block() {
+                            println!("f {:?}", self.cursor);
                             if_tree
                                 .insert(_Block, String::new())
                                 .extend(self.tree_return.clone());
+                            println!("c {:?}", self.cursor);
                             if self.elif() {
                                 if_tree.extend(self.tree_return.clone());
+
+                                println!("d {:?}", self.cursor);
                                 if self.cursor == Semicolon {
                                     self.tree_return = vec![if_tree];
                                     true
@@ -475,7 +481,7 @@ impl<'a> Parser<'a> {
                     if self.cursor == RRound {
                         self.adv_cursor();
                         if self.block() {
-                            cases.extend(self.tree_return.clone());
+                            cases.push(new_node(_Block, String::new()).extend(self.tree_return.clone()));
                             if self.cursor == Semicolon {
                                 self.adv_cursor();
                                 if self.case() {
@@ -522,7 +528,6 @@ impl<'a> Parser<'a> {
                             if self.elif() {
                                 elifs.extend(self.tree_return.clone());
                                 self.tree_return = elifs;
-                                self.adv_cursor();
                                 true
                             } else {
                                 panic!("Syntax Error")
@@ -546,17 +551,21 @@ impl<'a> Parser<'a> {
     }
 
     fn block(&mut self) -> bool {
+        println!("a {:?}", self.cursor);
         if self.statement() {
             let mut block = self.tree_return.clone();
+
+            self.adv_cursor();
             if self.block() {
                 block.extend(self.tree_return.clone());
+                
                 self.tree_return = block;
-                self.adv_cursor();
                 true
             } else {
                 panic!("Syntax Error")
             }
         } else {
+            println!("e {:?}", self.cursor);
             self.tree_return = vec![];
             true
         }

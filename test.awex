@@ -1,1 +1,17 @@
-8 -> |= #!x t@int; =|= 1 + x =| -> writebr;
+if (true) 
+    "holex";
+    "holyvu";
+elif (true)
+else
+    "hoooo";
+;
+
+for (tru; tru; tru)
+;
+
+match (1)
+    case (1)
+    ;
+    case (2)
+    ;
+;

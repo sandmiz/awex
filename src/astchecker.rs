@@ -1,5 +1,4 @@
 use core::panic;
-use std::cell::Ref;
 use std::{
     cell::RefCell,
     cmp::Ordering,
@@ -44,7 +43,7 @@ enum Effect {
 }
 
 #[derive(Clone)]
-struct Meaning {
+pub struct Meaning {
     t: Type,
     v: Value,
     e: Effect,
@@ -117,6 +116,19 @@ pub struct ASTChecker {
 }
 
 impl ASTChecker {
+
+    pub fn new() -> Self {
+        let global = Rc::new(RefCell::new(Table {
+            parent: None,
+            map: HashMap::new(),
+        }));
+
+        ASTChecker {
+            global: Rc::clone(&global),
+            local: Rc::clone(&global)
+        }
+    }
+
     pub fn check(&mut self, node_rc: Rc<RefCell<Node>>) -> Meaning {
         let node = node_rc.borrow();
         match node.token.0 {
@@ -574,13 +586,25 @@ impl ASTChecker {
                 let op1 = self.check(Rc::clone(&node.children[0]));
                 let op2 = self.check(Rc::clone(&node.children[1]));
 
+                let mut r: Vec<Type> = vec![];
+
                 match (op1.t, op2.t) {
-                    (Type::Tuple(o), Type::Shard(i, _)) if o == i => {}
-                    (o, Type::Shard(i, _)) if vec![o] == i => {}
-                    _ => {}
+                    (Type::Tuple(o), Type::Shard(i, ir)) if o == i => {
+                        r = ir;
+                    }
+                    (o, Type::Shard(i, ir)) if vec![o.clone()] == i => {
+                        r = ir;
+                    }
+                    _ => panic!("Type Error")
+                }
+
+                Meaning {
+                    t: Type::Tuple(r),
+                    v: Value::Nothing,
+                    e: if op1.e > op2.e { op1.e } else { op2.e }  
                 }
             }
             _ => todo!(),
         }
     }
-}
+}       
