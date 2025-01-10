@@ -675,6 +675,174 @@ impl ASTChecker {
                     _ => panic!("Type Error"),
                 }
             }
+            Minus => {
+                let op1 = self.check(Rc::clone(&node.children[0]));
+                let op2 = self.check(Rc::clone(&node.children[1]));
+
+                match (op1.t, op2.t) {
+                    (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
+                        (Value::Int(n1), Value::Int(n2)) => {
+                            node.swap(Node::new(Number, (n1 - n2).to_string()));
+
+                            Meaning {
+                                t: Type::Int,
+                                v: Value::Int(n1 - n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
+                            node.swap(Node::new(Number, (n1 as f32 - n2).to_string()));
+
+                            Meaning {
+                                t: Type::Float,
+                                v: Value::Float(n1 as f32 - n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(n1), Value::Float(n2)) => {
+                            node.swap(Node::new(Number, (n1 - n2).to_string()));
+
+                            Meaning {
+                                t: Type::Float,
+                                v: Value::Float(n1 - n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        _ => Meaning {
+                            t: Type::Float,
+                            v: Value::Nothing,
+                            e: Effect::Pure,
+                        },
+                    },
+                    _ => panic!("Type Error"),
+                }
+            }
+            Asterisk => {
+                let op1 = self.check(Rc::clone(&node.children[0]));
+                let op2 = self.check(Rc::clone(&node.children[1]));
+
+                match (op1.t, op2.t) {
+                    (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
+                        (Value::Int(n1), Value::Int(n2)) => {
+                            node.swap(Node::new(Number, (n1 * n2).to_string()));
+
+                            Meaning {
+                                t: Type::Int,
+                                v: Value::Int(n1 * n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
+                            node.swap(Node::new(Number, (n1 as f32 * n2).to_string()));
+
+                            Meaning {
+                                t: Type::Float,
+                                v: Value::Float(n1 as f32 * n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(n1), Value::Float(n2)) => {
+                            node.swap(Node::new(Number, (n1 * n2).to_string()));
+
+                            Meaning {
+                                t: Type::Float,
+                                v: Value::Float(n1 * n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        _ => Meaning {
+                            t: Type::Float,
+                            v: Value::Nothing,
+                            e: Effect::Pure,
+                        },
+                    },
+                    _ => panic!("Type Error"),
+                }
+            }
+            TiltBar => {
+                let op1 = self.check(Rc::clone(&node.children[0]));
+                let op2 = self.check(Rc::clone(&node.children[1]));
+
+                match (op1.t, op2.t) {
+                    (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
+                        (Value::Int(n1), Value::Int(n2)) => {
+                            node.swap(Node::new(Number, (n1 / n2).to_string()));
+
+                            Meaning {
+                                t: Type::Int,
+                                v: Value::Int(n1 / n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
+                            node.swap(Node::new(Number, (n1 as f32 / n2).to_string()));
+
+                            Meaning {
+                                t: Type::Float,
+                                v: Value::Float(n1 as f32 / n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(n1), Value::Float(n2)) => {
+                            node.swap(Node::new(Number, (n1 / n2).to_string()));
+
+                            Meaning {
+                                t: Type::Float,
+                                v: Value::Float(n1 / n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        _ => Meaning {
+                            t: Type::Float,
+                            v: Value::Nothing,
+                            e: Effect::Pure,
+                        },
+                    },
+                    _ => panic!("Type Error"),
+                }
+            }
+            Power => {
+                let op1 = self.check(Rc::clone(&node.children[0]));
+                let op2 = self.check(Rc::clone(&node.children[1]));
+
+                match (op1.t, op2.t) {
+                    (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
+                        (Value::Int(n1), Value::Int(n2)) => {
+                            node.swap(Node::new(Number, (n1 ** n2).to_string()));
+
+                            Meaning {
+                                t: Type::Int,
+                                v: Value::Int(n1 ** n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
+                            node.swap(Node::new(Number, (n1 as f32 ** n2).to_string()));
+
+                            Meaning {
+                                t: Type::Float,
+                                v: Value::Float(n1 as f32 ** n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(n1), Value::Float(n2)) => {
+                            node.swap(Node::new(Number, (n1 ** n2).to_string()));
+
+                            Meaning {
+                                t: Type::Float,
+                                v: Value::Float(n1 ** n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        _ => Meaning {
+                            t: Type::Float,
+                            v: Value::Nothing,
+                            e: Effect::Pure,
+                        },
+                    },
+                    _ => panic!("Type Error"),
+                }
+            }
             _ => todo!(),
         }
     }
