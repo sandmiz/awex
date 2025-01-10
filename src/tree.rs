@@ -1,5 +1,5 @@
 use crate::lexer::Token;
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::rc::{Rc, Weak};
 
 pub struct Node {
@@ -11,7 +11,6 @@ pub struct Node {
 pub trait NodeRc {
     fn insert(&self, token: Token, value: String) -> Rc<RefCell<Node>>;
     fn extend(&self, nodes: Vec<Rc<RefCell<Node>>>) -> Rc<RefCell<Node>>;
-    fn step_back(&self, n: u8) -> Rc<RefCell<Node>>;
 }
 
 impl std::fmt::Debug for Node {
@@ -58,26 +57,21 @@ impl NodeRc for Rc<RefCell<Node>> {
 
         Rc::clone(self)
     }
-
-    fn step_back(&self, n: u8) -> Rc<RefCell<Node>> {
-        if n > 0 {
-            let parent = self.borrow().parent.clone();
-            match parent {
-                Some(node) => node.upgrade().unwrap().step_back(n - 1),
-                None => panic!("Node has no parent"),
-            }
-        } else {
-            Rc::clone(&self)
-        }
-    }
 }
 
-pub fn new_node(token: Token, value: String) -> Rc<RefCell<Node>> {
-    let node = Node {
-        token: (token, value),
-        children: vec![],
-        parent: None,
-    };
+impl Node {
+    pub fn new(token: Token, value: String) -> Rc<RefCell<Self>> {
+        let node = Node {
+            token: (token, value),
+            children: vec![],
+            parent: None,
+        };
 
-    Rc::new(RefCell::new(node))
+        Rc::new(RefCell::new(node))
+    }
+
+    pub fn swap(&mut self, other: Rc<RefCell<Self>>) {
+        self.token = other.borrow().token.clone();
+        self.children = other.borrow().children.clone();
+    }
 }

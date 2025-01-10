@@ -1,4 +1,3 @@
-use core::panic;
 use std::{
     cell::RefCell,
     cmp::Ordering,
@@ -8,7 +7,7 @@ use std::{
 
 use crate::{lexer::Token::*, tree::Node};
 
-#[derive(PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 enum Value {
     Bool(bool),
     Int(u32),
@@ -21,7 +20,7 @@ enum Value {
     Break,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 enum Type {
     Bool,
     Int,
@@ -116,7 +115,6 @@ pub struct ASTChecker {
 }
 
 impl ASTChecker {
-
     pub fn new() -> Self {
         let global = Rc::new(RefCell::new(Table {
             parent: None,
@@ -125,12 +123,13 @@ impl ASTChecker {
 
         ASTChecker {
             global: Rc::clone(&global),
-            local: Rc::clone(&global)
+            local: Rc::clone(&global),
         }
     }
 
     pub fn check(&mut self, node_rc: Rc<RefCell<Node>>) -> Meaning {
-        let node = node_rc.borrow();
+        let mut node = node_rc.borrow_mut();
+        println!("Check {:?}", node.token.0);
         match node.token.0 {
             _SOF | _Block => {
                 let mut meaning = Meaning {
@@ -163,7 +162,7 @@ impl ASTChecker {
                     if inner_t == Type::None {
                         inner_t = child_meaning.t;
                     } else if inner_t != child_meaning.t {
-                        panic!("Syntax Error")
+                        panic!("Type Error")
                     }
                 }
 
@@ -242,7 +241,7 @@ impl ASTChecker {
                                     current_table.get("_".to_owned())
                                 {
                                     current_table = table;
-                                } else if Rc::ptr_eq(&current_table, &self.global) {
+                                } else if !Rc::ptr_eq(&current_table, &self.global) {
                                     current_table = Rc::clone(&self.global);
                                 } else {
                                     panic!("Path Error");
@@ -269,6 +268,8 @@ impl ASTChecker {
                         if child_meaning.e > e {
                             e = child_meaning.e;
                         }
+                    } else {
+                        panic!("Type Error")
                     }
                 }
 
@@ -476,6 +477,7 @@ impl ASTChecker {
             Mod => {
                 let mut e = Effect::Pure;
 
+                let pr_local = Rc::clone(&self.local);
                 self.local = self
                     .local
                     .add_table(Some(node.children[0].borrow().token.1.clone()));
@@ -484,6 +486,8 @@ impl ASTChecker {
                 if block_effect > e {
                     e = block_effect;
                 }
+
+                self.local = pr_local;
 
                 Meaning {
                     t: Type::None,
@@ -496,7 +500,7 @@ impl ASTChecker {
 
                 let key = chars.next().unwrap();
 
-                let val: String = chars.skip(2).collect();
+                let val: String = chars.skip(1).collect();
 
                 Meaning {
                     t: Type::None,
@@ -535,6 +539,7 @@ impl ASTChecker {
                     .skip(1)
                     .map(|x| self.check(Rc::clone(x)))
                 {
+                    println!("{:?}", anno.v);
                     match anno.v {
                         Value::Anno('e', effect) if e.is_none() => match effect.as_str() {
                             "pure" => e = Some(Effect::Pure),
@@ -588,6 +593,8 @@ impl ASTChecker {
 
                 let mut r: Vec<Type> = vec![];
 
+                println!("{:?}", op1.t);
+
                 match (op1.t, op2.t) {
                     (Type::Tuple(o), Type::Shard(i, ir)) if o == i => {
                         r = ir;
@@ -595,16 +602,80 @@ impl ASTChecker {
                     (o, Type::Shard(i, ir)) if vec![o.clone()] == i => {
                         r = ir;
                     }
-                    _ => panic!("Type Error")
+                    _ => panic!("Type Error"),
                 }
 
                 Meaning {
                     t: Type::Tuple(r),
                     v: Value::Nothing,
-                    e: if op1.e > op2.e { op1.e } else { op2.e }  
+                    e: if op1.e > op2.e { op1.e } else { op2.e },
+                }
+            }
+            Plus => {
+                let op1 = self.check(Rc::clone(&node.children[0]));
+                let op2 = self.check(Rc::clone(&node.children[1]));
+
+                match (op1.t, op2.t) {
+                    (Type::String, Type::String) => {
+                        if let (Value::String(s1), Value::String(s2)) = (op1.v, op2.v) {
+                            node.swap(Node::new(Str, s1.clone() + s2.as_str()));
+
+                            Meaning {
+                                t: Type::String,
+                                v: Value::String(s1 + s2.as_str()),
+                                e: Effect::Pure,
+                            }
+                        } else {
+                            Meaning {
+                                t: Type::String,
+                                v: Value::Nothing,
+                                e: Effect::Pure,
+                            }
+                        }
+                    }
+                    (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
+                        (Value::Int(n1), Value::Int(n2)) => {
+                            node.swap(Node::new(Number, (n1 + n2).to_string()));
+
+                            Meaning {
+                                t: Type::Int,
+                                v: Value::Int(n1 + n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
+                            node.swap(Node::new(Number, (n1 as f32 + n2).to_string()));
+
+                            Meaning {
+                                t: Type::Float,
+                                v: Value::Float(n1 as f32 + n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(n1), Value::Float(n2)) => {
+                            node.swap(Node::new(Number, (n1 + n2).to_string()));
+
+                            Meaning {
+                                t: Type::Float,
+                                v: Value::Float(n1 + n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        _ => Meaning {
+                            t: Type::Float,
+                            v: Value::Nothing,
+                            e: Effect::Pure,
+                        },
+                    },
+                    (Type::List(t1), Type::List(t2)) if t1 == t2 => Meaning {
+                        t: Type::List(t1),
+                        v: Value::Nothing,
+                        e: Effect::Pure,
+                    },
+                    _ => panic!("Type Error"),
                 }
             }
             _ => todo!(),
         }
     }
-}       
+}

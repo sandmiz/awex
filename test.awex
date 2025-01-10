@@ -1,4 +1,16 @@
-if (true) 
+{true} -> #!boolm t@bool e@pure;
+
+
+mod myvars
+    ` #!boolm t@int e@pure;
+    if (boolm) 
+
+    ;
+;
+
+
+
+if (boolm) 
     "holex";
     "holyvu";
 elif (true)
@@ -6,12 +18,12 @@ else
     "hoooo";
 ;
 
-for (tru; tru; tru)
+for (sd: true;; sd: true ;; sd: true;)
 ;
 
-match (1)
-    case (1)
+match ("lol")
+    case ("what")
     ;
-    case (2)
+    case ("lol")
     ;
 ;

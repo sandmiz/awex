@@ -6,7 +6,7 @@ use crate::{
         self, Lexer,
         Token::{self, *},
     },
-    tree::{new_node, Node, NodeRc},
+    tree::{Node, NodeRc},
 };
 
 pub struct Parser<'a> {
@@ -69,7 +69,7 @@ impl<'a> Parser<'a> {
             }
         } else if self.cursor == Mailbox {
             self.adv_cursor();
-            let mailbox = new_node(Mailbox, self.buf.clone());
+            let mailbox = Node::new(Mailbox, self.buf.clone());
             if self.precedence0() {
                 mailbox.extend(self.tree_return.clone());
                 if self.cursor == Semicolon {
@@ -83,20 +83,20 @@ impl<'a> Parser<'a> {
             }
         } else if self.cursor == Break {
             if self.adv_cursor() == Semicolon {
-                self.tree_return = vec![new_node(Break, self.buf.clone())];
+                self.tree_return = vec![Node::new(Break, self.buf.clone())];
                 true
             } else {
                 panic!("Syntax Error")
             }
         } else if self.cursor == FatRArrow {
             if self.adv_cursor() == Semicolon {
-                self.tree_return = vec![new_node(FatRArrow, self.buf.clone())];
+                self.tree_return = vec![Node::new(FatRArrow, self.buf.clone())];
                 true
             } else {
                 panic!("Syntax Error")
             }
         } else if self.cursor == If {
-            let if_tree = new_node(If, self.buf.clone());
+            let if_tree = Node::new(If, self.buf.clone());
             if self.adv_cursor() == LRound {
                 self.adv_cursor();
                 if self.precedence0() {
@@ -152,7 +152,7 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == For {
-            let for_tree = new_node(For, self.buf.clone());
+            let for_tree = Node::new(For, self.buf.clone());
             if self.adv_cursor() == LRound {
                 self.adv_cursor();
                 if self.value() {
@@ -203,7 +203,7 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == ForEach {
-            let foreach_tree = new_node(ForEach, self.buf.clone());
+            let foreach_tree = Node::new(ForEach, self.buf.clone());
             if self.adv_cursor() == LRound {
                 self.adv_cursor();
                 if self.precedence0() {
@@ -233,7 +233,7 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == Forever {
-            let forever_tree = new_node(Forever, self.buf.clone());
+            let forever_tree = Node::new(Forever, self.buf.clone());
 
             self.adv_cursor();
             if self.block() {
@@ -250,7 +250,7 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == While {
-            let while_tree = new_node(While, self.buf.clone());
+            let while_tree = Node::new(While, self.buf.clone());
             if self.adv_cursor() == LRound {
                 self.adv_cursor();
                 if self.precedence0() {
@@ -280,7 +280,7 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == Match {
-            let match_tree = new_node(Match, self.buf.clone());
+            let match_tree = Node::new(Match, self.buf.clone());
             if self.adv_cursor() == LRound {
                 self.adv_cursor();
                 if self.precedence0() {
@@ -308,7 +308,7 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == Try {
-            let try_tree = new_node(Try, self.buf.clone());
+            let try_tree = Node::new(Try, self.buf.clone());
             self.adv_cursor();
             if self.block() {
                 try_tree
@@ -336,7 +336,7 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == Shard {
-            let shard_tree = new_node(Shard, self.buf.clone());
+            let shard_tree = Node::new(Shard, self.buf.clone());
             if self.adv_cursor() == LRound {
                 self.adv_cursor();
                 if self.args() {
@@ -401,9 +401,10 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == Mod {
-            let mod_tree = new_node(Mod, self.buf.clone());
+            let mod_tree = Node::new(Mod, self.buf.clone());
 
             if self.adv_cursor() == ID {
+                mod_tree.insert(ID, self.buf.clone());
                 self.adv_cursor();
                 if self.block() {
                     mod_tree.extend(self.tree_return.clone());
@@ -420,7 +421,7 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == Get {
-            let get_tree = new_node(Get, self.buf.clone());
+            let get_tree = Node::new(Get, self.buf.clone());
 
             if self.adv_cursor() == Str {
                 get_tree.insert(Str, self.buf.clone());
@@ -481,7 +482,9 @@ impl<'a> Parser<'a> {
                     if self.cursor == RRound {
                         self.adv_cursor();
                         if self.block() {
-                            cases.push(new_node(_Block, String::new()).extend(self.tree_return.clone()));
+                            cases.push(
+                                Node::new(_Block, String::new()).extend(self.tree_return.clone()),
+                            );
                             if self.cursor == Semicolon {
                                 self.adv_cursor();
                                 if self.case() {
@@ -522,7 +525,7 @@ impl<'a> Parser<'a> {
                     if self.cursor == RRound {
                         self.adv_cursor();
                         if self.block() {
-                            let elif_block = new_node(_Block, String::new());
+                            let elif_block = Node::new(_Block, String::new());
                             elif_block.extend(self.tree_return.clone());
                             elifs.push(elif_block);
                             if self.elif() {
@@ -558,7 +561,7 @@ impl<'a> Parser<'a> {
             self.adv_cursor();
             if self.block() {
                 block.extend(self.tree_return.clone());
-                
+
                 self.tree_return = block;
                 true
             } else {
@@ -586,7 +589,7 @@ impl<'a> Parser<'a> {
 
     fn precedence0prime(&mut self) -> bool {
         if self.cursor == RArrow {
-            let push = new_node(RArrow, self.buf.clone());
+            let push = Node::new(RArrow, self.buf.clone());
 
             push.extend(self.tree_return.clone());
 
@@ -606,7 +609,7 @@ impl<'a> Parser<'a> {
         } else if [Dart, PlusDart, MinusDart, MulDart, DivDart, PowDart].contains(&self.cursor)
             && self.tree_return[0].borrow().token.0 == _Path
         {
-            let dart = new_node(self.cursor.clone(), self.buf.clone());
+            let dart = Node::new(self.cursor.clone(), self.buf.clone());
 
             dart.extend(self.tree_return.clone());
 
@@ -638,7 +641,7 @@ impl<'a> Parser<'a> {
 
     fn precedence1prime(&mut self) -> bool {
         if self.cursor == Or {
-            let or = new_node(Or, self.buf.clone());
+            let or = Node::new(Or, self.buf.clone());
 
             or.extend(self.tree_return.clone());
 
@@ -674,7 +677,7 @@ impl<'a> Parser<'a> {
 
     fn precedence2prime(&mut self) -> bool {
         if self.cursor == And {
-            let and = new_node(And, self.buf.clone());
+            let and = Node::new(And, self.buf.clone());
 
             and.extend(self.tree_return.clone());
 
@@ -702,7 +705,7 @@ impl<'a> Parser<'a> {
         } else if self.cursor == Exclam {
             self.adv_cursor();
 
-            let not = new_node(Exclam, self.buf.clone());
+            let not = Node::new(Exclam, self.buf.clone());
 
             if self.precedence4() {
                 not.extend(self.tree_return.clone());
@@ -731,7 +734,7 @@ impl<'a> Parser<'a> {
 
     fn precedence4prime(&mut self) -> bool {
         if [Equal, NEqual, GreatThan, GreatEq, SmallThan, SmallEq].contains(&self.cursor) {
-            let eq = new_node(self.cursor, self.buf.clone());
+            let eq = Node::new(self.cursor, self.buf.clone());
 
             eq.extend(self.tree_return.clone());
 
@@ -767,7 +770,7 @@ impl<'a> Parser<'a> {
 
     fn precedence5prime(&mut self) -> bool {
         if [Plus, Minus].contains(&self.cursor) {
-            let add = new_node(self.cursor, self.buf.clone());
+            let add = Node::new(self.cursor, self.buf.clone());
 
             add.extend(self.tree_return.clone());
 
@@ -803,7 +806,7 @@ impl<'a> Parser<'a> {
 
     fn precedence6prime(&mut self) -> bool {
         if [Asterisk, TiltBar].contains(&self.cursor) {
-            let mul = new_node(self.cursor, self.buf.clone());
+            let mul = Node::new(self.cursor, self.buf.clone());
 
             mul.extend(self.tree_return.clone());
 
@@ -839,7 +842,7 @@ impl<'a> Parser<'a> {
 
     fn precedence7prime(&mut self) -> bool {
         if self.cursor == Power {
-            let pow = new_node(Power, self.buf.clone());
+            let pow = Node::new(Power, self.buf.clone());
 
             pow.extend(self.tree_return.clone());
 
@@ -883,12 +886,12 @@ impl<'a> Parser<'a> {
 
     fn value(&mut self) -> bool {
         if [Number, Str, Bool, Nothing].contains(&self.cursor) {
-            self.tree_return = vec![new_node(self.cursor, self.buf.clone())];
+            self.tree_return = vec![Node::new(self.cursor, self.buf.clone())];
             self.adv_cursor();
             true
         } else if self.cursor == ID {
-            let id_tree = new_node(_Path, String::new());
-            id_tree.extend(vec![new_node(ID, self.buf.clone())]);
+            let id_tree = Node::new(_Path, String::new());
+            id_tree.extend(vec![Node::new(ID, self.buf.clone())]);
             self.adv_cursor();
             if self.path() {
                 id_tree.extend(self.tree_return.clone());
@@ -896,7 +899,7 @@ impl<'a> Parser<'a> {
             self.tree_return = vec![id_tree];
             true
         } else if self.cursor == Hash {
-            let assign = new_node(Hash, self.buf.clone());
+            let assign = Node::new(Hash, self.buf.clone());
             if self.adv_cursor() == ID {
                 let id_tree = assign.insert(_Path, self.buf.clone());
                 id_tree.insert(ID, self.buf.clone());
@@ -911,7 +914,7 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == Amph {
-            let assign = new_node(Amph, self.buf.clone());
+            let assign = Node::new(Amph, self.buf.clone());
             if self.adv_cursor() == ID {
                 let id_tree = assign.insert(_Path, self.buf.clone());
                 id_tree.insert(ID, self.buf.clone());
@@ -931,11 +934,11 @@ impl<'a> Parser<'a> {
             if [Number, Str, Bool, Nothing].contains(&self.adv_cursor()) {
                 self.adv_cursor();
                 if self.item() {
-                    let list = new_node(_List, String::new());
+                    let list = Node::new(_List, String::new());
 
                     list.extend(self.tree_return.clone());
 
-                    if self.adv_cursor() == RSquare {
+                    if self.cursor == RSquare {
                         self.tree_return = vec![list];
 
                         self.adv_cursor();
@@ -950,14 +953,14 @@ impl<'a> Parser<'a> {
                 panic!("Syntax Error")
             }
         } else if self.cursor == LCurly {
+            let tuple = Node::new(_Tuple, String::new());
             if [Number, Str, Bool, Nothing].contains(&self.adv_cursor()) {
+                tuple.insert(self.cursor, self.buf.clone());
                 self.adv_cursor();
                 if self.item() {
-                    let tuple = new_node(_Tuple, String::new());
-
                     tuple.extend(self.tree_return.clone());
 
-                    if self.adv_cursor() == RCurly {
+                    if self.cursor == RCurly {
                         self.tree_return = vec![tuple];
 
                         self.adv_cursor();
@@ -971,18 +974,20 @@ impl<'a> Parser<'a> {
             } else {
                 panic!("Syntax Error")
             }
-        } else if self.cursor == LLambda {
-            let lambda = new_node(_Lambda, String::new());
+        } else if self.cursor == Sd {
+            let lambda = Node::new(_Lambda, String::new());
 
             self.adv_cursor();
             if self.args() {
-                lambda.insert(_Block, String::new()).extend(self.tree_return.clone());
-                if self.cursor == MLambda {
+                lambda
+                    .insert(_Block, String::new())
+                    .extend(self.tree_return.clone());
+                if self.cursor == Colon {
                     self.adv_cursor();
                     if self.precedence0() {
                         lambda.extend(self.tree_return.clone());
 
-                        if self.cursor == RLambda {
+                        if self.cursor == Semicolon {
                             self.tree_return = vec![lambda];
                             self.adv_cursor();
                             true
@@ -1007,7 +1012,7 @@ impl<'a> Parser<'a> {
     fn item(&mut self) -> bool {
         if self.cursor == Comma {
             if [Number, Str, Bool, Nothing].contains(&self.adv_cursor()) {
-                let mut items = vec![new_node(self.cursor, self.buf.clone())];
+                let mut items = vec![Node::new(self.cursor, self.buf.clone())];
 
                 self.adv_cursor();
 
@@ -1030,7 +1035,7 @@ impl<'a> Parser<'a> {
     fn path(&mut self) -> bool {
         if self.cursor == Colon {
             if self.adv_cursor() == ID {
-                let mut path = vec![new_node(self.cursor, self.buf.clone())];
+                let mut path = vec![Node::new(self.cursor, self.buf.clone())];
 
                 self.adv_cursor();
 
@@ -1052,7 +1057,7 @@ impl<'a> Parser<'a> {
 
     fn def(&mut self) -> bool {
         if self.cursor == HashExclam {
-            let def = new_node(HashExclam, self.buf.clone());
+            let def = Node::new(HashExclam, self.buf.clone());
             if self.adv_cursor() == ID {
                 def.insert(ID, self.buf.clone());
 
@@ -1075,7 +1080,7 @@ impl<'a> Parser<'a> {
 
     fn anno(&mut self) -> bool {
         if self.cursor == Annotation {
-            let mut annos = vec![new_node(Annotation, self.buf.clone())];
+            let mut annos = vec![Node::new(Annotation, self.buf.clone())];
             self.adv_cursor();
             if self.anno() {
                 annos.extend(self.tree_return.clone());
