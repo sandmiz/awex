@@ -628,7 +628,7 @@ impl ASTChecker {
                 let op1 = self.check(Rc::clone(&node.children[0]));
                 let op2 = self.check(Rc::clone(&node.children[1]));
 
-                match (op1.t, op2.t) {
+                match (op1.t.clone(), op2.t.clone()) {
                     (Type::String, Type::String) => {
                         if let (Value::String(s1), Value::String(s2)) = (op1.v, op2.v) {
                             node.swap(Node::new(Str, s1.clone() + s2.as_str()));
@@ -733,7 +733,7 @@ impl ASTChecker {
                 let op1 = self.check(Rc::clone(&node.children[0]));
                 let op2 = self.check(Rc::clone(&node.children[1]));
 
-                match (op1.t, op2.t) {
+                match (op1.t.clone(), op2.t.clone()) {
                     (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
                         (v1, v2) if v1 == v2 => {
                             node.swap(Node::new(Number, "0".to_string()));
@@ -776,7 +776,7 @@ impl ASTChecker {
                             node.swap(op_node);
 
                             Meaning {
-                                t: op1.t.clone(),
+                                t: op1.t,
                                 v,
                                 e: op1.e,
                             }
@@ -804,7 +804,7 @@ impl ASTChecker {
                 let op1 = self.check(Rc::clone(&node.children[0]));
                 let op2 = self.check(Rc::clone(&node.children[1]));
 
-                match (op1.t, op2.t) {
+                match (op1.t.clone(), op2.t.clone()) {
                     (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
                         (Value::Int(n1), Value::Int(n2)) => {
                             node.swap(Node::new(Number, (n1 * n2).to_string()));
@@ -838,7 +838,7 @@ impl ASTChecker {
                             node.swap(op_node);
 
                             Meaning {
-                                t: op1.t.clone(),
+                                t: op1.t,
                                 v,
                                 e: op1.e,
                             }
@@ -848,7 +848,7 @@ impl ASTChecker {
                             node.swap(op_node);
 
                             Meaning {
-                                t: op2.t.clone(),
+                                t: op2.t,
                                 v,
                                 e: op2.e,
                             }
