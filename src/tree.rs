@@ -1,5 +1,5 @@
 use crate::lexer::Token;
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
 pub struct Node {

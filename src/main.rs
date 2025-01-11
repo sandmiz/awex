@@ -1,4 +1,3 @@
-use astchecker::ASTChecker;
 use clap::Parser;
 use std::fs;
 mod astchecker;
@@ -28,5 +27,7 @@ fn main() {
 
         let mut check = astchecker::ASTChecker::new();
         check.check(parse.tree.clone());
+
+        println!("{:?}", parse.tree.clone());
     }
 }

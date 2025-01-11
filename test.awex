@@ -1,5 +1,6 @@
 {true} -> #!boolm t@bool e@pure;
 
+1 + 3 * 5 / 4 * 5 ** 4 * 9;
 
 mod myvars
     ` #!boolm t@int e@pure;
@@ -10,7 +11,7 @@ mod myvars
 
 
 
-if (boolm) 
+if (boolm == boolm) 
     "holex";
     "holyvu";
 elif (true)
