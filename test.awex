@@ -11,10 +11,11 @@ mod myvars
 
 
 
-if (boolm == boolm) 
+if (boolm != boolm) 
     "holex";
     "holyvu";
-elif (true)
+elif (false)
+    "caga";
 else
     "hoooo";
 ;

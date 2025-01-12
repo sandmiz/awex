@@ -262,20 +262,52 @@ impl ASTChecker {
             }
             If => {
                 let mut e = Effect::Pure;
-                let mut swap = false;
+                let mut state = 0;
+                let mut i = 0;
 
                 for child in node.children.clone() {
                     let child_meaning = self.check(Rc::clone(&child));
 
                     if let (_Block, _) | (_, Type::Bool) = (child.borrow().token.0, child_meaning.t)
                     {
-                        if swap {
-                            node.swap(Rc::clone(&child));
-                            break;
-                        }
-
-                        if let Value::Bool(b) = child_meaning.v {
-                            swap = b;
+                        match state {
+                            0 => {
+                                if let Value::Bool(b) = child_meaning.v {
+                                    state = if b { 1 } else { 2 };
+                                } else {
+                                    state = 3;
+                                }
+                                i += 1;
+                                println!("{}", i);
+                            }
+                            1 => {
+                                node.swap(Rc::clone(&child));
+                                break;
+                            }
+                            2 => {
+                                println!("{} {:?} {:?}", i, node.children, child);
+                                node.children =
+                                    [&node.children[..(i - 1)], &node.children[(i + 1)..]].concat();
+                                i -= 1;
+                                state = 3;
+                            }
+                            3 => {
+                                if let Value::Bool(b) = child_meaning.v {
+                                    state = if b { 4 } else { 2 }
+                                }
+                                if node.children.len() == 1 {
+                                    node.swap(Rc::clone(&child));
+                                }
+                                i += 1;
+                            }
+                            4 => {
+                                node.children = node.children[..i].to_vec();
+                                if node.children.len() <= 2 {
+                                    node.swap(Rc::clone(&child));
+                                }
+                                break;
+                            }
+                            _ => unimplemented!(),
                         }
 
                         if child_meaning.e > e {
@@ -735,15 +767,6 @@ impl ASTChecker {
 
                 match (op1.t.clone(), op2.t.clone()) {
                     (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
-                        (v1, v2) if v1 == v2 => {
-                            node.swap(Node::new(Number, "0".to_string()));
-
-                            Meaning {
-                                t: Type::Int,
-                                v: Value::Int(0),
-                                e: Effect::Pure,
-                            }
-                        }
                         (Value::Int(n1), Value::Int(n2)) => {
                             node.swap(Node::new(Number, (n1 - n2).to_string()));
 
@@ -768,6 +791,15 @@ impl ASTChecker {
                             Meaning {
                                 t: Type::Float,
                                 v: Value::Float(n1 - n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (v1, v2) if v1 == v2 => {
+                            node.swap(Node::new(Number, "0".to_string()));
+
+                            Meaning {
+                                t: Type::Int,
+                                v: Value::Int(0),
                                 e: Effect::Pure,
                             }
                         }
@@ -833,6 +865,34 @@ impl ASTChecker {
                                 e: Effect::Pure,
                             }
                         }
+                        (_, Value::Int(0)) if op1.t == Type::Int => {
+                            node.swap(Node::new(Number, 0.to_string()));
+
+                            Meaning {
+                                t: Type::Int,
+                                v: Value::Int(0),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Int(0), _) if op2.t == Type::Int => {
+                            node.swap(Node::new(Number, 0.to_string()));
+
+                            Meaning {
+                                t: Type::Int,
+                                v: Value::Int(0),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (_, Value::Int(0) | Value::Float(0.))
+                        | (Value::Int(0) | Value::Float(0.), _) => {
+                            node.swap(Node::new(Number, 0.to_string()));
+
+                            Meaning {
+                                t: Type::Int,
+                                v: Value::Int(0),
+                                e: Effect::Pure,
+                            }
+                        }
                         (v, Value::Int(1)) => {
                             let op_node = Rc::clone(&node.children[0]);
                             node.swap(op_node);
@@ -887,7 +947,7 @@ impl ASTChecker {
                 let op1 = self.check(Rc::clone(&node.children[0]));
                 let op2 = self.check(Rc::clone(&node.children[1]));
 
-                match (op1.t, op2.t) {
+                match (op1.t.clone(), op2.t.clone()) {
                     (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
                         (Value::Int(n1), Value::Int(n2)) => {
                             node.swap(Node::new(Number, (n1 / n2).to_string()));
@@ -914,6 +974,54 @@ impl ASTChecker {
                                 t: Type::Float,
                                 v: Value::Float(n1 / n2),
                                 e: Effect::Pure,
+                            }
+                        }
+                        (v1, v2) if v1 == v2 => {
+                            node.swap(Node::new(Number, 1.to_string()));
+
+                            Meaning {
+                                t: op1.t,
+                                v: Value::Float(1.),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Int(0), _) => {
+                            node.swap(Node::new(Number, 0.to_string()));
+
+                            Meaning {
+                                t: Type::Int,
+                                v: Value::Int(0),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(0.), _) => {
+                            node.swap(Node::new(Number, 0.to_string()));
+
+                            Meaning {
+                                t: Type::Float,
+                                v: Value::Float(0.),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (_, Value::Int(0) | Value::Float(0.)) => panic!("Zero Division Error"),
+                        (v, Value::Int(1)) => {
+                            let op_node = Rc::clone(&node.children[0]);
+                            node.swap(op_node);
+
+                            Meaning {
+                                t: op1.t,
+                                v,
+                                e: op1.e,
+                            }
+                        }
+                        (v, Value::Float(1.)) => {
+                            let op_node = Rc::clone(&node.children[0]);
+                            node.swap(op_node);
+
+                            Meaning {
+                                t: Type::Float,
+                                v,
+                                e: op1.e,
                             }
                         }
                         _ => Meaning {
