@@ -1015,11 +1015,231 @@ impl ASTChecker {
                     panic!("Type Error");
                 }
             }
+            GreatThan => {
+                let op1 = self.check(Rc::clone(&node.children[0]));
+                let op2 = self.check(Rc::clone(&node.children[1]));
+
+                if op1.t == Type::Int
+                    || op1.t == Type::Float && op2.t == Type::Int
+                    || op2.t == Type::Float
+                {
+                    match (op1.v, op2.v) {
+                        (Value::Int(n1), Value::Int(n2)) => {
+                            node.swap(Node::new(Bool, (n1 > n2).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 > n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Int(n1), Value::Float(n2)) => {
+                            node.swap(Node::new(Bool, (n1 as f32 > n2).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 as f32 > n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(n1), Value::Int(n2)) => {
+                            node.swap(Node::new(Bool, (n1 > n2 as f32).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 > n2 as f32),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(n1), Value::Float(n2)) => {
+                            node.swap(Node::new(Bool, (n1 > n2).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 > n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        _ => Meaning {
+                            t: Type::Bool,
+                            v: Value::Nothing,
+                            e: Effect::Pure,
+                        },
+                    }
+                } else {
+                    panic!("Type Error");
+                }
+            }
+            GreatEq => {
+                let op1 = self.check(Rc::clone(&node.children[0]));
+                let op2 = self.check(Rc::clone(&node.children[1]));
+
+                if op1.t == Type::Int
+                    || op1.t == Type::Float && op2.t == Type::Int
+                    || op2.t == Type::Float
+                {
+                    match (op1.v, op2.v) {
+                        (Value::Int(n1), Value::Int(n2)) => {
+                            node.swap(Node::new(Bool, (n1 >= n2).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 >= n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Int(n1), Value::Float(n2)) => {
+                            node.swap(Node::new(Bool, (n1 as f32 >= n2).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 as f32 >= n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(n1), Value::Int(n2)) => {
+                            node.swap(Node::new(Bool, (n1 >= n2 as f32).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 >= n2 as f32),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(n1), Value::Float(n2)) => {
+                            node.swap(Node::new(Bool, (n1 >= n2).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 >= n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        _ => Meaning {
+                            t: Type::Bool,
+                            v: Value::Nothing,
+                            e: Effect::Pure,
+                        },
+                    }
+                } else {
+                    panic!("Type Error");
+                }
+            }
+            SmallThan => {
+                let op1 = self.check(Rc::clone(&node.children[0]));
+                let op2 = self.check(Rc::clone(&node.children[1]));
+
+                if op1.t == Type::Int
+                    || op1.t == Type::Float && op2.t == Type::Int
+                    || op2.t == Type::Float
+                {
+                    match (op1.v, op2.v) {
+                        (Value::Int(n1), Value::Int(n2)) => {
+                            node.swap(Node::new(Bool, (n1 < n2).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 < n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Int(n1), Value::Float(n2)) => {
+                            node.swap(Node::new(Bool, ((n1 as f32) < n2).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool((n1 as f32) < n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(n1), Value::Int(n2)) => {
+                            node.swap(Node::new(Bool, (n1 < n2 as f32).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 < n2 as f32),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(n1), Value::Float(n2)) => {
+                            node.swap(Node::new(Bool, (n1 < n2).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 < n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        _ => Meaning {
+                            t: Type::Bool,
+                            v: Value::Nothing,
+                            e: Effect::Pure,
+                        },
+                    }
+                } else {
+                    panic!("Type Error");
+                }
+            }
+            SmallEq => {
+                let op1 = self.check(Rc::clone(&node.children[0]));
+                let op2 = self.check(Rc::clone(&node.children[1]));
+
+                if op1.t == Type::Int
+                    || op1.t == Type::Float && op2.t == Type::Int
+                    || op2.t == Type::Float
+                {
+                    match (op1.v, op2.v) {
+                        (Value::Int(n1), Value::Int(n2)) => {
+                            node.swap(Node::new(Bool, (n1 <= n2).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 <= n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Int(n1), Value::Float(n2)) => {
+                            node.swap(Node::new(Bool, (n1 as f32 <= n2).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 as f32 <= n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(n1), Value::Int(n2)) => {
+                            node.swap(Node::new(Bool, (n1 <= n2 as f32).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 <= n2 as f32),
+                                e: Effect::Pure,
+                            }
+                        }
+                        (Value::Float(n1), Value::Float(n2)) => {
+                            node.swap(Node::new(Bool, (n1 <= n2).to_string()));
+
+                            Meaning {
+                                t: Type::Bool,
+                                v: Value::Bool(n1 <= n2),
+                                e: Effect::Pure,
+                            }
+                        }
+                        _ => Meaning {
+                            t: Type::Bool,
+                            v: Value::Nothing,
+                            e: Effect::Pure,
+                        },
+                    }
+                } else {
+                    panic!("Type Error");
+                }
+            }
             Or => {
                 let op1 = self.check(Rc::clone(&node.children[0]));
                 let op2 = self.check(Rc::clone(&node.children[1]));
 
-                if op1.t == op2.t {
+                if op1.t == Type::Bool && op2.t == Type::Bool {
                     if let (Value::Bool(b1), Value::Bool(b2)) = (op1.v, op2.v) {
                         node.swap(Node::new(Bool, (b1 || b2).to_string()));
 
