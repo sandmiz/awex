@@ -13,8 +13,11 @@ enum Value {
     Int(u32),
     Float(f32),
     String(String),
+    List(Box<Type>),
+    Tuple(Vec<Type>),
     Nothing,
     Address(u32),
+    Table,
     Anno(char, String),
     Mailbox(Type),
     Continue,
@@ -223,41 +226,54 @@ impl ASTChecker {
                 }
             }
             _Path => {
-                let mut meaning: Option<Meaning> = None;
-                let mut current_table = Rc::clone(&self.local);
+                let mut parent_meaning: Option<Meaning> = None;
 
-                for child in node.children.clone() {
-                    let mut pass = false;
-
-                    while !pass {
-                        match current_table.get(child.borrow().token.1.clone()) {
-                            Some(Symbol::Table(table)) if meaning.is_none() => {
-                                pass = true;
-                                current_table = table;
-                            }
-                            Some(Symbol::Meaning(inner_meaning)) if meaning.is_none() => {
-                                meaning = Some(inner_meaning);
-                                pass = true;
-                            }
-                            None => {
-                                if let Some(Symbol::Table(table)) =
-                                    current_table.get("_".to_owned())
-                                {
-                                    current_table = table;
-                                } else if !Rc::ptr_eq(&current_table, &self.global) {
-                                    current_table = Rc::clone(&self.global);
-                                } else {
-                                    panic!("Path Error");
-                                }
-                            }
-                            _ => panic!("Path Error"),
-                        }
+                for child_meaning in node.children.iter().map(|x| self.check(x.clone())) {
+                    match (parent_meaning.v, child_meaning.v) {
+                        (None | Value::Address(_)) => {
+                            child_meaning
+                        },
+                        ()
                     }
                 }
+            },
+            ID => {
+                match self.local.get(node.token.1.clone()) {
+                    Some(Symbol::Table(table)) => {
+                        self.local = table;
 
-                match meaning {
-                    Some(inner_meaning) => inner_meaning,
-                    None => panic!("Name Error"),
+                        Meaning {
+                            t: Type::None,
+                            v: Value::Table,
+                            e: Effect::Pure
+                        }
+                    }
+                    Some(Symbol::Meaning(meaning)) => {
+                        meaning
+                    }
+                    None => {
+                        if let Some(Symbol::Table(table)) =
+                            self.local.get("_".to_owned())
+                        {
+                            self.local = table;
+
+                            Meaning {
+                                t: Type::None,
+                                v: Value::Table,
+                                e: Effect::Pure
+                            }
+                        } else if !Rc::ptr_eq(&self.local, &self.global) {
+                            self.local = Rc::clone(&self.global);
+
+                            Meaning {
+                                t: Type::None,
+                                v: Value::Table,
+                                e: Effect::Pure
+                            }
+                        } else {
+                            panic!("Path Error");
+                        }
+                    }
                 }
             }
             If => {
