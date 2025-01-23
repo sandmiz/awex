@@ -885,29 +885,38 @@ impl<'a> Parser<'a> {
     }
 
     fn value(&mut self) -> bool {
-        if [Number, Str, Bool, Nothing].contains(&self.cursor) {
+        if [Int, Float, Str, Bool, Nothing].contains(&self.cursor) {
             self.tree_return = vec![Node::new(self.cursor, self.buf.clone())];
             self.adv_cursor();
             true
         } else if self.cursor == ID {
-            let id_tree = Node::new(_Path, String::new());
-            id_tree.extend(vec![Node::new(ID, self.buf.clone())]);
+            let id = Node::new(ID, self.buf.clone());
             self.adv_cursor();
+            
             if self.path() {
-                id_tree.extend(self.tree_return.clone());
+                let path = Node::new(_Path, self.buf.clone());
+                path.extend(vec![id]);
+                path.extend(self.tree_return.clone());
+                self.tree_return = vec![path];
+            } else {
+                self.tree_return = vec![id];
             }
-            self.tree_return = vec![id_tree];
+
+            
             true
         } else if self.cursor == Hash {
             let assign = Node::new(Hash, self.buf.clone());
             if self.adv_cursor() == ID {
-                let id_tree = assign.insert(_Path, self.buf.clone());
-                id_tree.insert(ID, self.buf.clone());
+                let id = Node::new(ID, self.buf.clone());
                 self.adv_cursor();
+                
                 if self.path() {
-                    id_tree.extend(self.tree_return.clone());
+                    let path = assign.insert(_Path, self.buf.clone());
+                    path.extend(vec![id]);
+                    path.extend(self.tree_return.clone());
+                } else {
+                    assign.extend(vec![id]);
                 }
-
                 self.tree_return = vec![assign];
                 true
             } else {
@@ -916,13 +925,18 @@ impl<'a> Parser<'a> {
         } else if self.cursor == Amph {
             let assign = Node::new(Amph, self.buf.clone());
             if self.adv_cursor() == ID {
-                let id_tree = assign.insert(_Path, self.buf.clone());
-                id_tree.insert(ID, self.buf.clone());
+                let id = Node::new(ID, self.buf.clone());
                 self.adv_cursor();
-                if self.path() {
-                    id_tree.extend(self.tree_return.clone());
-                }
 
+                if self.path() {
+                    let path = assign.insert(_Path, self.buf.clone());
+                    path.extend(vec![id]);
+                    path.extend(self.tree_return.clone());
+                } else {
+                    assign.extend(vec![id]);
+                }
+                
+                
                 self.tree_return = vec![assign];
                 true
             } else {
@@ -931,7 +945,7 @@ impl<'a> Parser<'a> {
         } else if self.def() {
             true
         } else if self.cursor == LSquare {
-            if [Number, Str, Bool, Nothing].contains(&self.adv_cursor()) {
+            if [Int, Float, Str, Bool, Nothing].contains(&self.adv_cursor()) {
                 self.adv_cursor();
                 if self.item() {
                     let list = Node::new(_List, String::new());
@@ -939,7 +953,14 @@ impl<'a> Parser<'a> {
                     list.extend(self.tree_return.clone());
 
                     if self.cursor == RSquare {
-                        self.tree_return = vec![list];
+                        if self.path() {
+                            let path = Node::new(_Path, self.buf.clone());
+                            path.extend(vec![list]);
+                            path.extend(self.tree_return.clone());
+                            self.tree_return = vec![path];
+                        } else {
+                            self.tree_return = vec![list];
+                        }
 
                         self.adv_cursor();
                         true
@@ -954,14 +975,21 @@ impl<'a> Parser<'a> {
             }
         } else if self.cursor == LCurly {
             let tuple = Node::new(_Tuple, String::new());
-            if [Number, Str, Bool, Nothing].contains(&self.adv_cursor()) {
+            if [Int, Float, Str, Bool, Nothing].contains(&self.adv_cursor()) {
                 tuple.insert(self.cursor, self.buf.clone());
                 self.adv_cursor();
                 if self.item() {
                     tuple.extend(self.tree_return.clone());
 
                     if self.cursor == RCurly {
-                        self.tree_return = vec![tuple];
+                        if self.path() {
+                            let path = Node::new(_Path, self.buf.clone());
+                            path.extend(vec![tuple]);
+                            path.extend(self.tree_return.clone());
+                            self.tree_return = vec![path];
+                        } else {
+                            self.tree_return = vec![tuple];
+                        }
 
                         self.adv_cursor();
                         true
@@ -1011,7 +1039,7 @@ impl<'a> Parser<'a> {
 
     fn item(&mut self) -> bool {
         if self.cursor == Comma {
-            if [Number, Str, Bool, Nothing].contains(&self.adv_cursor()) {
+            if [Int, Float, Str, Bool, Nothing].contains(&self.adv_cursor()) {
                 let mut items = vec![Node::new(self.cursor, self.buf.clone())];
 
                 self.adv_cursor();
@@ -1034,7 +1062,7 @@ impl<'a> Parser<'a> {
 
     fn path(&mut self) -> bool {
         if self.cursor == Colon {
-            if self.adv_cursor() == ID {
+            if [ID, Int].contains(&self.adv_cursor()) {
                 let mut path = vec![Node::new(self.cursor, self.buf.clone())];
 
                 self.adv_cursor();

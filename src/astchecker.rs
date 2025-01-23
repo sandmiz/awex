@@ -13,8 +13,6 @@ enum Value {
     Int(u32),
     Float(f32),
     String(String),
-    List(Box<Type>),
-    Tuple(Vec<Type>),
     Nothing,
     Address(u32),
     Table,
@@ -226,16 +224,25 @@ impl ASTChecker {
                 }
             }
             _Path => {
+                let pr_local = Rc::clone(&self.local);
                 let mut parent_meaning: Option<Meaning> = None;
+                let iter = node.children.iter().map(|x| self.check(x.clone()));
 
-                for child_meaning in node.children.iter().map(|x| self.check(x.clone())) {
-                    match (parent_meaning.v, child_meaning.v) {
-                        (None | Value::Address(_)) => {
+                for child_meaning in iter {
+                    match (parent_meaning, child_meaning) {
+                        (None, Meaning {t: _, v: Value::Address(_), e: _}) => {
                             child_meaning
                         },
-                        ()
+                        (Some(Meaning {t: Type::List(t), v: _, e}), Meaning {t: Type::Int, v: _, e: _}) => Meaning {
+                            parent_meaning = Meaning {
+                                t,
+                                v: Value::Nothing,
+                                e
+                            }
+                        }
                     }
                 }
+                todo!("List indexing")
             },
             ID => {
                 match self.local.get(node.token.1.clone()) {
@@ -579,7 +586,7 @@ impl ASTChecker {
                 v: Value::Bool(node.token.1.parse().unwrap()),
                 e: Effect::Pure,
             },
-            Number => Meaning {
+            Float => Meaning {
                 t: Type::Int,
                 v: Value::Int(node.token.1.parse().unwrap()),
                 e: Effect::Pure,
@@ -696,7 +703,7 @@ impl ASTChecker {
                     }
                     (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
                         (Value::Int(n1), Value::Int(n2)) => {
-                            node.swap(Node::new(Number, (n1 + n2).to_string()));
+                            node.swap(Node::new(Float, (n1 + n2).to_string()));
 
                             Meaning {
                                 t: Type::Int,
@@ -705,7 +712,7 @@ impl ASTChecker {
                             }
                         }
                         (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
-                            node.swap(Node::new(Number, (n1 as f32 + n2).to_string()));
+                            node.swap(Node::new(Float, (n1 as f32 + n2).to_string()));
 
                             Meaning {
                                 t: Type::Float,
@@ -714,7 +721,7 @@ impl ASTChecker {
                             }
                         }
                         (Value::Float(n1), Value::Float(n2)) => {
-                            node.swap(Node::new(Number, (n1 + n2).to_string()));
+                            node.swap(Node::new(Float, (n1 + n2).to_string()));
 
                             Meaning {
                                 t: Type::Float,
@@ -784,7 +791,7 @@ impl ASTChecker {
                 match (op1.t.clone(), op2.t.clone()) {
                     (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
                         (Value::Int(n1), Value::Int(n2)) => {
-                            node.swap(Node::new(Number, (n1 - n2).to_string()));
+                            node.swap(Node::new(Float, (n1 - n2).to_string()));
 
                             Meaning {
                                 t: Type::Int,
@@ -793,7 +800,7 @@ impl ASTChecker {
                             }
                         }
                         (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
-                            node.swap(Node::new(Number, (n1 as f32 - n2).to_string()));
+                            node.swap(Node::new(Float, (n1 as f32 - n2).to_string()));
 
                             Meaning {
                                 t: Type::Float,
@@ -802,7 +809,7 @@ impl ASTChecker {
                             }
                         }
                         (Value::Float(n1), Value::Float(n2)) => {
-                            node.swap(Node::new(Number, (n1 - n2).to_string()));
+                            node.swap(Node::new(Float, (n1 - n2).to_string()));
 
                             Meaning {
                                 t: Type::Float,
@@ -811,7 +818,7 @@ impl ASTChecker {
                             }
                         }
                         (v1, v2) if v1 == v2 => {
-                            node.swap(Node::new(Number, "0".to_string()));
+                            node.swap(Node::new(Float, "0".to_string()));
 
                             Meaning {
                                 t: Type::Int,
@@ -855,7 +862,7 @@ impl ASTChecker {
                 match (op1.t.clone(), op2.t.clone()) {
                     (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
                         (Value::Int(n1), Value::Int(n2)) => {
-                            node.swap(Node::new(Number, (n1 * n2).to_string()));
+                            node.swap(Node::new(Int, (n1 * n2).to_string()));
 
                             Meaning {
                                 t: Type::Int,
@@ -864,7 +871,7 @@ impl ASTChecker {
                             }
                         }
                         (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
-                            node.swap(Node::new(Number, (n1 as f32 * n2).to_string()));
+                            node.swap(Node::new(Float, (n1 as f32 * n2).to_string()));
 
                             Meaning {
                                 t: Type::Float,
@@ -873,7 +880,7 @@ impl ASTChecker {
                             }
                         }
                         (Value::Float(n1), Value::Float(n2)) => {
-                            node.swap(Node::new(Number, (n1 * n2).to_string()));
+                            node.swap(Node::new(Float, (n1 * n2).to_string()));
 
                             Meaning {
                                 t: Type::Float,
@@ -882,7 +889,7 @@ impl ASTChecker {
                             }
                         }
                         (_, Value::Int(0)) if op1.t == Type::Int => {
-                            node.swap(Node::new(Number, 0.to_string()));
+                            node.swap(Node::new(Int, 0.to_string()));
 
                             Meaning {
                                 t: Type::Int,
@@ -891,7 +898,7 @@ impl ASTChecker {
                             }
                         }
                         (Value::Int(0), _) if op2.t == Type::Int => {
-                            node.swap(Node::new(Number, 0.to_string()));
+                            node.swap(Node::new(Int, 0.to_string()));
 
                             Meaning {
                                 t: Type::Int,
@@ -901,7 +908,7 @@ impl ASTChecker {
                         }
                         (_, Value::Int(0) | Value::Float(0.))
                         | (Value::Int(0) | Value::Float(0.), _) => {
-                            node.swap(Node::new(Number, 0.to_string()));
+                            node.swap(Node::new(Float, 0.to_string()));
 
                             Meaning {
                                 t: Type::Int,
@@ -966,7 +973,7 @@ impl ASTChecker {
                 match (op1.t.clone(), op2.t.clone()) {
                     (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
                         (Value::Int(n1), Value::Int(n2)) => {
-                            node.swap(Node::new(Number, (n1 / n2).to_string()));
+                            node.swap(Node::new(Int, (n1 / n2).to_string()));
 
                             Meaning {
                                 t: Type::Int,
@@ -975,7 +982,7 @@ impl ASTChecker {
                             }
                         }
                         (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
-                            node.swap(Node::new(Number, (n1 as f32 / n2).to_string()));
+                            node.swap(Node::new(Float, (n1 as f32 / n2).to_string()));
 
                             Meaning {
                                 t: Type::Float,
@@ -984,7 +991,7 @@ impl ASTChecker {
                             }
                         }
                         (Value::Float(n1), Value::Float(n2)) => {
-                            node.swap(Node::new(Number, (n1 / n2).to_string()));
+                            node.swap(Node::new(Float, (n1 / n2).to_string()));
 
                             Meaning {
                                 t: Type::Float,
@@ -993,7 +1000,7 @@ impl ASTChecker {
                             }
                         }
                         (v1, v2) if v1 == v2 => {
-                            node.swap(Node::new(Number, 1.to_string()));
+                            node.swap(Node::new(Float, 1.to_string()));
 
                             Meaning {
                                 t: op1.t,
@@ -1002,7 +1009,7 @@ impl ASTChecker {
                             }
                         }
                         (Value::Int(0), _) => {
-                            node.swap(Node::new(Number, 0.to_string()));
+                            node.swap(Node::new(Int, 0.to_string()));
 
                             Meaning {
                                 t: Type::Int,
@@ -1011,7 +1018,7 @@ impl ASTChecker {
                             }
                         }
                         (Value::Float(0.), _) => {
-                            node.swap(Node::new(Number, 0.to_string()));
+                            node.swap(Node::new(Int, 0.to_string()));
 
                             Meaning {
                                 t: Type::Float,
@@ -1056,7 +1063,7 @@ impl ASTChecker {
                 match (op1.t, op2.t) {
                     (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
                         (Value::Int(n1), Value::Int(n2)) => {
-                            node.swap(Node::new(Number, (n1.pow(n2)).to_string()));
+                            node.swap(Node::new(Int, (n1.pow(n2)).to_string()));
 
                             Meaning {
                                 t: Type::Int,
@@ -1065,7 +1072,7 @@ impl ASTChecker {
                             }
                         }
                         (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
-                            node.swap(Node::new(Number, (n1 as f32).powf(n2).to_string()));
+                            node.swap(Node::new(Float, (n1 as f32).powf(n2).to_string()));
 
                             Meaning {
                                 t: Type::Float,
@@ -1074,7 +1081,7 @@ impl ASTChecker {
                             }
                         }
                         (Value::Float(n1), Value::Float(n2)) => {
-                            node.swap(Node::new(Number, (n1.powf(n2)).to_string()));
+                            node.swap(Node::new(Float, (n1.powf(n2)).to_string()));
 
                             Meaning {
                                 t: Type::Float,

@@ -18,7 +18,8 @@ pub enum Token {
     _EOF,
     ID,
     Str,
-    Number,
+    Int,
+    Float,
     Bool,
     Nothing,
     Annotation,
@@ -160,7 +161,7 @@ impl<'a> Lexer<'a> {
                     } else if ch == '.' {
                         State::Float
                     } else if ch.is_ascii() {
-                        ret = Some((Token::Number, self.buf.clone()));
+                        ret = Some((Token::Int, self.buf.clone()));
 
                         if ch.is_ascii_alphabetic() {
                             self.buf = ch.to_string();
@@ -318,7 +319,7 @@ impl<'a> Lexer<'a> {
                             State::Decimal
                         }
                     } else if ch.is_ascii() && !ch.is_ascii_alphabetic() {
-                        ret = Some((Token::Number, self.buf.clone()));
+                        ret = Some((Token::Int, self.buf.clone()));
 
                         self.buf = ch.to_string();
                         if ch.is_ascii_punctuation() {
@@ -336,7 +337,7 @@ impl<'a> Lexer<'a> {
 
                         State::Float
                     } else if ch.is_ascii() && !ch.is_ascii_alphabetic() {
-                        ret = Some((Token::Number, self.buf.clone()));
+                        ret = Some((Token::Float, self.buf.clone()));
 
                         self.buf = ch.to_string();
                         if ch.is_ascii_punctuation() && ch != '.' {
@@ -354,7 +355,7 @@ impl<'a> Lexer<'a> {
 
                         State::Hex
                     } else if ch.is_ascii() && !ch.is_ascii_alphabetic() {
-                        ret = Some((Token::Number, self.buf.clone()));
+                        ret = Some((Token::Int, self.buf.clone()));
 
                         self.buf = ch.to_string();
                         if ch.is_ascii_punctuation() && ch != '.' {
@@ -372,7 +373,7 @@ impl<'a> Lexer<'a> {
 
                         State::Octa
                     } else if ch.is_ascii() && !ch.is_ascii_alphabetic() {
-                        ret = Some((Token::Number, self.buf.clone()));
+                        ret = Some((Token::Int, self.buf.clone()));
 
                         self.buf = ch.to_string();
                         if ch.is_ascii_punctuation() && ch != '.' {
@@ -390,7 +391,7 @@ impl<'a> Lexer<'a> {
 
                         State::Binary
                     } else if ch.is_ascii() && !ch.is_ascii_alphabetic() {
-                        ret = Some((Token::Number, self.buf.clone()));
+                        ret = Some((Token::Int, self.buf.clone()));
 
                         self.buf = ch.to_string();
                         if ch.is_ascii_punctuation() && ch != '.' {
