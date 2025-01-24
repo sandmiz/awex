@@ -114,6 +114,7 @@ enum Symbol {
 pub struct ASTChecker {
     global: Rc<RefCell<Table>>,
     local: Rc<RefCell<Table>>,
+    can_init: bool,
     unique_id_count: u32,
 }
 
@@ -127,6 +128,7 @@ impl ASTChecker {
         ASTChecker {
             global: Rc::clone(&global),
             local: Rc::clone(&global),
+            can_init: true,
             unique_id_count: 0,
         }
     }
@@ -229,59 +231,58 @@ impl ASTChecker {
                 let iter = node.children.iter().map(|x| self.check(x.clone()));
 
                 for child_meaning in iter {
-                    match (parent_meaning, child_meaning) {
-                        (None, Meaning {t: _, v: Value::Address(_), e: _}) => {
-                            child_meaning
+                    match (parent_meaning, child_meaning.clone()) {
+                        (None, Meaning {t: _, v: Value::Address(_) | Value::Table, e: _} | Meaning {t: Type::List(_) | Type::Tuple(_), v: _, e: _}) => {
+                            parent_meaning = Some(child_meaning);
                         },
-                        (Some(Meaning {t: Type::List(t), v: _, e}), Meaning {t: Type::Int, v: _, e: _}) => Meaning {
-                            parent_meaning = Meaning {
-                                t,
+                        (Some(Meaning {t: Type::List(t), v: _, e}), Meaning {t: Type::Int, v: _, e: _}) => {
+                            parent_meaning = Some(Meaning {
+                                t: *t,
                                 v: Value::Nothing,
                                 e
-                            }
-                        }
+                            });
+                        },
+                        _ => panic!("Type Error")
                     }
                 }
-                todo!("List indexing")
+
+                self.local = pr_local;
+                println!("{:?}", parent_meaning.clone().unwrap().v);
+                parent_meaning.unwrap()
             },
             ID => {
-                match self.local.get(node.token.1.clone()) {
-                    Some(Symbol::Table(table)) => {
-                        self.local = table;
+                fn search(ast: &mut ASTChecker, node: std::cell::RefMut<'_, Node>) -> Meaning{
+                    match ast.local.get(node.token.1.clone()) {
+                        Some(Symbol::Table(table)) => {
+                            ast.local = table;
 
-                        Meaning {
-                            t: Type::None,
-                            v: Value::Table,
-                            e: Effect::Pure
+                            Meaning {
+                                t: Type::None,
+                                v: Value::Table,
+                                e: Effect::Pure
+                            }
                         }
-                    }
-                    Some(Symbol::Meaning(meaning)) => {
-                        meaning
-                    }
-                    None => {
-                        if let Some(Symbol::Table(table)) =
-                            self.local.get("_".to_owned())
-                        {
-                            self.local = table;
+                        Some(Symbol::Meaning(meaning)) => {
+                            meaning
+                        }
+                        None => {
+                            if let Some(Symbol::Table(table)) =
+                                ast.local.get("_".to_owned())
+                            {
+                                ast.local = table;
 
-                            Meaning {
-                                t: Type::None,
-                                v: Value::Table,
-                                e: Effect::Pure
-                            }
-                        } else if !Rc::ptr_eq(&self.local, &self.global) {
-                            self.local = Rc::clone(&self.global);
+                                search(ast, node)
+                            } else if !Rc::ptr_eq(&ast.local, &ast.global) {
+                                ast.local = Rc::clone(&ast.global);
 
-                            Meaning {
-                                t: Type::None,
-                                v: Value::Table,
-                                e: Effect::Pure
+                                search(ast, node)
+                            } else {
+                                panic!("Path Error");
                             }
-                        } else {
-                            panic!("Path Error");
                         }
                     }
                 }
+                search(self, node)
             }
             If => {
                 let mut e = Effect::Pure;
@@ -296,19 +297,21 @@ impl ASTChecker {
                         match state {
                             0 => {
                                 if let Value::Bool(b) = child_meaning.v {
+                                    self.can_init = true;
                                     state = if b { 1 } else { 2 };
                                 } else {
+                                    self.can_init = false;
                                     state = 3;
                                 }
                                 i += 1;
                                 println!("{}", i);
                             }
                             1 => {
+                                
                                 node.swap(Rc::clone(&child));
                                 break;
                             }
                             2 => {
-                                println!("{} {:?} {:?}", i, node.children, child);
                                 node.children =
                                     [&node.children[..(i - 1)], &node.children[(i + 1)..]].concat();
                                 i -= 1;
@@ -316,14 +319,19 @@ impl ASTChecker {
                             }
                             3 => {
                                 if let Value::Bool(b) = child_meaning.v {
+                                    self.can_init = true;
                                     state = if b { 4 } else { 2 }
+                                } else {
+                                    self.can_init = false;
                                 }
+
                                 if node.children.len() == 1 {
                                     node.swap(Rc::clone(&child));
                                 }
                                 i += 1;
                             }
                             4 => {
+                                self.can_init = true;
                                 node.children = node.children[..i].to_vec();
                                 if node.children.len() <= 2 {
                                     node.swap(Rc::clone(&child));
@@ -341,6 +349,8 @@ impl ASTChecker {
                     }
                 }
 
+                self.can_init = true;
+
                 Meaning {
                     v: Value::Nothing,
                     t: Type::None,
@@ -348,9 +358,10 @@ impl ASTChecker {
                 }
             }
             For => {
-                let mut e = Effect::Pure;
+                self.can_init = false;
 
-                let mut iter = node.children.iter().map(|x| self.check(x.clone()));
+                let mut e = Effect::Pure;
+                let mut iter = node.children.iter().map(|x| self.check(x.clone()));   
 
                 for _ in 0..3 {
                     if let Meaning {
@@ -372,6 +383,8 @@ impl ASTChecker {
                     e = block_effect;
                 }
 
+                self.can_init = true;
+
                 Meaning {
                     v: Value::Nothing,
                     t: Type::None,
@@ -379,8 +392,9 @@ impl ASTChecker {
                 }
             }
             ForEach => {
-                let mut e = Effect::Pure;
+                self.can_init = false;
 
+                let mut e = Effect::Pure;
                 let mut iter = node.children.iter().map(|x| self.check(x.clone()));
 
                 if let Meaning {
@@ -401,6 +415,8 @@ impl ASTChecker {
                     e = block_effect;
                 }
 
+                self.can_init = true;
+
                 Meaning {
                     v: Value::Nothing,
                     t: Type::None,
@@ -408,14 +424,17 @@ impl ASTChecker {
                 }
             }
             Forever => {
-                let mut e = Effect::Pure;
+                self.can_init = false;
 
+                let mut e = Effect::Pure;
                 let mut iter = node.children.iter().map(|x| self.check(x.clone()));
 
                 let block_effect = iter.next().unwrap().e;
                 if block_effect < e {
                     e = block_effect;
                 }
+
+                self.can_init = true;
 
                 Meaning {
                     v: Value::Nothing,
@@ -424,8 +443,9 @@ impl ASTChecker {
                 }
             }
             While => {
-                let mut e = Effect::Pure;
+                self.can_init = false;
 
+                let mut e = Effect::Pure;
                 let mut iter = node.children.iter().map(|x| self.check(x.clone()));
 
                 if let Meaning {
@@ -446,6 +466,8 @@ impl ASTChecker {
                     e = block_effect;
                 }
 
+                self.can_init = true;
+
                 Meaning {
                     v: Value::Nothing,
                     t: Type::None,
@@ -455,6 +477,8 @@ impl ASTChecker {
             Match => {
                 let mut e = Effect::Pure;
                 let mut match_t: Option<Type> = None;
+
+                self.can_init = false;
 
                 for child in node.children.clone() {
                     let child_meaning = self.check(Rc::clone(&child));
@@ -475,6 +499,8 @@ impl ASTChecker {
                         e = child_meaning.e;
                     }
                 }
+
+                self.can_init = true;
 
                 Meaning {
                     v: Value::Nothing,
@@ -586,9 +612,14 @@ impl ASTChecker {
                 v: Value::Bool(node.token.1.parse().unwrap()),
                 e: Effect::Pure,
             },
-            Float => Meaning {
+            Int => Meaning {
                 t: Type::Int,
                 v: Value::Int(node.token.1.parse().unwrap()),
+                e: Effect::Pure,
+            },
+            Float => Meaning {
+                t: Type::Float,
+                v: Value::Float(node.token.1.parse().unwrap()),
                 e: Effect::Pure,
             },
             Str => Meaning {
@@ -597,6 +628,9 @@ impl ASTChecker {
                 e: Effect::Pure,
             },
             HashExclam => {
+                if !self.can_init {
+                    panic!("Illegal Init Error")
+                }
                 let id = node.children[0].borrow().token.1.clone();
                 let mut e: Option<Effect> = None;
                 let mut t: Option<Type> = None;

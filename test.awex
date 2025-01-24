@@ -1,4 +1,5 @@
 {true} -> #!boolm t@bool e@pure;
+[1, 2, 3, 4];
 
 1 + 3 * 5 / 4 * 5 ** 4 * 9;
 
@@ -12,7 +13,7 @@ mod myvars
 
 
 if (boolm != boolm) 
-    "holex";
+    "holex" -> #!holex t@string e@pure;
     "holyvu";
 elif (false)
     "caga";

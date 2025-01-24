@@ -953,6 +953,7 @@ impl<'a> Parser<'a> {
                     list.extend(self.tree_return.clone());
 
                     if self.cursor == RSquare {
+                        self.adv_cursor();
                         if self.path() {
                             let path = Node::new(_Path, self.buf.clone());
                             path.extend(vec![list]);
@@ -961,8 +962,6 @@ impl<'a> Parser<'a> {
                         } else {
                             self.tree_return = vec![list];
                         }
-
-                        self.adv_cursor();
                         true
                     } else {
                         panic!("Syntax Error")
@@ -982,6 +981,7 @@ impl<'a> Parser<'a> {
                     tuple.extend(self.tree_return.clone());
 
                     if self.cursor == RCurly {
+                        self.adv_cursor();
                         if self.path() {
                             let path = Node::new(_Path, self.buf.clone());
                             path.extend(vec![tuple]);
@@ -991,7 +991,6 @@ impl<'a> Parser<'a> {
                             self.tree_return = vec![tuple];
                         }
 
-                        self.adv_cursor();
                         true
                     } else {
                         panic!("Syntax Error")
@@ -1063,23 +1062,23 @@ impl<'a> Parser<'a> {
     fn path(&mut self) -> bool {
         if self.cursor == Colon {
             if [ID, Int].contains(&self.adv_cursor()) {
+                println!("{:?}", self.cursor);
                 let mut path = vec![Node::new(self.cursor, self.buf.clone())];
 
                 self.adv_cursor();
 
                 if self.path() {
                     path.extend(self.tree_return.clone());
-                    self.tree_return = path;
-                    true
-                } else {
-                    panic!("Syntax Error")
-                }
+                } 
+
+                self.tree_return = path;
+                true
             } else {
                 panic!("Syntax Error")
             }
         } else {
             self.tree_return = vec![];
-            true
+            false
         }
     }
 
