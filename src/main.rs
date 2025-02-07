@@ -1,6 +1,6 @@
 use clap::Parser;
 use std::fs;
-mod astchecker;
+mod semilagen;
 mod lexer;
 mod parser;
 mod tree;
@@ -25,9 +25,7 @@ fn main() {
 
         parse.parse();
 
-        let mut check = astchecker::ASTChecker::new();
+        let mut check = semilagen::ASTChecker::new();
         check.check(parse.tree.clone());
-
-        println!("{:?}", parse.tree.clone());
     }
 }

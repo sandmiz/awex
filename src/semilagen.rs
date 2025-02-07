@@ -1,3 +1,7 @@
+/*
+Semantic Checking & Intermediate Language Generator
+*/
+
 use std::{
     cell::RefCell,
     cmp::Ordering,
@@ -11,7 +15,7 @@ use crate::{lexer::Token::*, tree::Node};
 enum Value {
     Outcome(Vec<Type>),
     Bool(bool),
-    Int(u32),
+    Int(i32),
     Float(f32),
     String(String),
     Nothing,
@@ -72,6 +76,11 @@ trait TableRc {
     fn get(&self, key: String) -> Option<Symbol>;
     fn set(&mut self, key: String, val: Symbol);
     fn add_table(&mut self, key: Option<String>) -> Rc<RefCell<Table>>;
+}
+
+enum Instruction {
+    Mov(u8, u32),
+
 }
 
 impl TableRc for Rc<RefCell<Table>> {
@@ -1031,7 +1040,7 @@ impl ASTChecker {
                     (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
                         (Value::Int(n1), Value::Int(n2)) => Meaning {
                             t: Type::Int,
-                            v: Value::Int(n1.pow(n2)),
+                            v: Value::Float((n1 as f32).powi(n2)),
                             e: Effect::Pure,
                         },
                         (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
