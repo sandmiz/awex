@@ -12,8 +12,8 @@ mod myvars
 
 
 
-if (boolm != boolm) 
-    "holex" -> #!holex t@string e@pure;
+if (boolm)
+    =< 0;
     "holyvu";
 elif (false)
     "caga";
