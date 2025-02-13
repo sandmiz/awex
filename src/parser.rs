@@ -345,6 +345,7 @@ impl<'a> Parser<'a> {
                     if self.cursor == RRound {
                         if self.adv_cursor() == FatRArrow {
                             if self.adv_cursor() == LRound {
+                                self.adv_cursor();
                                 if self.args() {
                                     shard_tree
                                         .insert(_Block, String::new())

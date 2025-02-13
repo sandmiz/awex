@@ -16,10 +16,11 @@ enum Value {
     Outcome(Vec<Type>),
     Bool(bool),
     Int(i32),
-    Float(f32),
+    Float(f64),
     String(String),
     Nothing,
-    Address(u32),
+    Heap(u32),
+    Stack(u32),
     Table,
     Anno(char, String),
     Mailbox(Type),
@@ -37,7 +38,7 @@ enum Type {
     List(Box<Type>),
     Tuple(Vec<Type>),
     Shard(Vec<Type>, Vec<Type>),
-    Box(Box<Type>),
+    Jack,
 }
 
 #[derive(PartialEq, Clone)]
@@ -78,11 +79,6 @@ trait TableRc {
     fn add_table(&mut self, key: Option<String>) -> Rc<RefCell<Table>>;
 }
 
-enum Instruction {
-    Mov(u8, u32),
-
-}
-
 impl TableRc for Rc<RefCell<Table>> {
     fn get(&self, key: String) -> Option<Symbol> {
         if key == "_".to_owned() {
@@ -121,25 +117,40 @@ enum Symbol {
     Table(Rc<RefCell<Table>>),
 }
 
-pub struct ASTChecker {
-    global: Rc<RefCell<Table>>,
-    local: Rc<RefCell<Table>>,
-    can_init: bool,
-    unique_id_count: u32,
+enum Operation {
+    Mov(u8, u32),
+    LdrStack(u8, u32),
+    StrStack(u8, u32),
+    AllocStack(u32),
+    PurgeStack(u32),
+
 }
 
-impl ASTChecker {
+
+
+pub struct Interpreter {
+    global: Rc<RefCell<Table>>,
+    local: Rc<RefCell<Table>>,
+    alloc_heap: bool,
+    heap: u32,
+    stack: u32,
+    registers: u32,
+}
+
+impl Interpreter {
     pub fn new() -> Self {
         let global = Rc::new(RefCell::new(Table {
             parent: None,
             map: HashMap::new(),
         }));
 
-        ASTChecker {
+        Interpreter {
             global: Rc::clone(&global),
             local: Rc::clone(&global),
-            can_init: true,
-            unique_id_count: 0,
+            alloc_heap: true,
+            heap: 0,
+            stack: 0,
+            registers: 0
         }
     }
 
@@ -262,7 +273,7 @@ impl ASTChecker {
                             None,
                             Meaning {
                                 t: _,
-                                v: Value::Address(_) | Value::Table,
+                                v: Value::Heap(_) | Value::Stack(_) | Value::Table,
                                 e: _,
                             }
                             | Meaning {
@@ -300,7 +311,7 @@ impl ASTChecker {
                 parent_meaning.unwrap()
             }
             ID => {
-                fn search(ast: &mut ASTChecker, node: std::cell::RefMut<'_, Node>) -> Meaning {
+                fn search(ast: &mut Interpreter, node: std::cell::RefMut<'_, Node>) -> Meaning {
                     match ast.local.get(node.token.1.clone()) {
                         Some(Symbol::Table(table)) => {
                             ast.local = table;
@@ -344,10 +355,11 @@ impl ASTChecker {
                         match state {
                             0 => {
                                 if let Value::Bool(b) = child_meaning.v {
-                                    self.can_init = true;
+                                    self.alloc_heap = true;
+                self.stack = 0;
                                     state = if b { 1 } else { 2 };
                                 } else {
-                                    self.can_init = false;
+                                    self.alloc_heap = false;
                                     state = 3;
                                 }
                                 i += 1;
@@ -364,7 +376,8 @@ impl ASTChecker {
                             }
                             3 | 5 => {
                                 if let Value::Bool(b) = child_meaning.v {
-                                    self.can_init = true;
+                                    self.alloc_heap = true;
+                self.stack = 0;
                                     state = if b { 4 } else { 2 }
                                 } else {
                                     if let Value::Outcome(_) = child_meaning.v {
@@ -381,7 +394,7 @@ impl ASTChecker {
                                             _ => panic!("Inconsistent Outcome Error"),
                                         }
                                     }
-                                    self.can_init = false;
+                                    self.alloc_heap = false;
                                     state = 5;
                                 }
 
@@ -389,7 +402,8 @@ impl ASTChecker {
                                 i += 1;
                             }
                             4 => {
-                                self.can_init = true;
+                                self.alloc_heap = true;
+                self.stack = 0;
                                 node.children = node.children[..i].to_vec();
                                 if node.children.len() <= 2 {}
                                 break;
@@ -405,7 +419,8 @@ impl ASTChecker {
                     }
                 }
 
-                self.can_init = true;
+                self.alloc_heap = true;
+                self.stack = 0;
 
                 if outcome != Some(Value::Outcome(vec![])) && !has_else {
                     panic!("Inconsistent Outcome Error")
@@ -418,7 +433,7 @@ impl ASTChecker {
                 }
             }
             For => {
-                self.can_init = false;
+                self.alloc_heap = false;
 
                 let mut e = Effect::Pure;
                 let mut iter = node.children.iter().map(|x| self.check(x.clone()));
@@ -446,7 +461,8 @@ impl ASTChecker {
                     e = block.e;
                 }
 
-                self.can_init = true;
+                self.alloc_heap = true;
+                self.stack = 0;
 
                 Meaning {
                     v: Value::Nothing,
@@ -455,7 +471,7 @@ impl ASTChecker {
                 }
             }
             ForEach => {
-                self.can_init = false;
+                self.alloc_heap = false;
 
                 let mut e = Effect::Pure;
                 let mut iter = node.children.iter().map(|x| self.check(x.clone()));
@@ -481,7 +497,8 @@ impl ASTChecker {
                     e = block.e;
                 }
 
-                self.can_init = true;
+                self.alloc_heap = true;
+                self.stack = 0;
 
                 Meaning {
                     v: Value::Nothing,
@@ -490,7 +507,7 @@ impl ASTChecker {
                 }
             }
             Forever => {
-                self.can_init = false;
+                self.alloc_heap = false;
 
                 let mut e = Effect::Pure;
                 let mut iter = node.children.iter().map(|x| self.check(x.clone()));
@@ -503,7 +520,8 @@ impl ASTChecker {
                     e = block.e;
                 }
 
-                self.can_init = true;
+                self.alloc_heap = true;
+                self.stack = 0;
 
                 Meaning {
                     v: Value::Nothing,
@@ -512,7 +530,7 @@ impl ASTChecker {
                 }
             }
             While => {
-                self.can_init = false;
+                self.alloc_heap = false;
 
                 let mut e = Effect::Pure;
                 let mut iter = node.children.iter().map(|x| self.check(x.clone()));
@@ -538,7 +556,8 @@ impl ASTChecker {
                     e = block.e;
                 }
 
-                self.can_init = true;
+                self.alloc_heap = true;
+                self.stack = 0;
 
                 Meaning {
                     v: Value::Nothing,
@@ -550,7 +569,7 @@ impl ASTChecker {
                 let mut e = Effect::Pure;
                 let mut match_t: Option<Type> = None;
 
-                self.can_init = false;
+                self.alloc_heap = false;
 
                 for child in node.children.clone() {
                     let child_meaning = self.check(Rc::clone(&child));
@@ -572,7 +591,8 @@ impl ASTChecker {
                     }
                 }
 
-                self.can_init = true;
+                self.alloc_heap = true;
+                self.stack = 0;
 
                 Meaning {
                     v: Value::Nothing,
@@ -700,9 +720,6 @@ impl ASTChecker {
                 e: Effect::Pure,
             },
             HashExclam => {
-                if !self.can_init {
-                    panic!("Illegal Init Error")
-                }
                 let id = node.children[0].borrow().token.1.clone();
                 let mut e: Option<Effect> = None;
                 let mut t: Option<Type> = None;
@@ -727,7 +744,8 @@ impl ASTChecker {
                             "int" => t = Some(Type::Int),
                             "float" => t = Some(Type::Float),
                             "string" => t = Some(Type::String),
-                            _ => panic!("Annotation Error"),
+                            "shard" => t = Some(Type::Shard((), ()))
+                            _ => panic!("Annotation Error {:?}"),
                         },
                         _ => panic!("Annotation Error"),
                     }
@@ -737,16 +755,24 @@ impl ASTChecker {
                     panic!("Annotation Error")
                 }
 
+                let v: Value;
+
+                if self.alloc_heap {
+                    v = Value::Heap(self.heap);
+                    self.heap += 1;
+                } else {
+                    v = Value::Stack(self.stack);
+                    self.stack += 1;
+                }
+
                 self.local.set(
                     id,
                     Symbol::Meaning(Meaning {
                         t: t.clone().unwrap(),
-                        v: Value::Address(self.unique_id_count),
+                        v,
                         e: e.unwrap(),
                     }),
                 );
-
-                self.unique_id_count += 1;
 
                 Meaning {
                     t: Type::Shard(vec![t.clone().unwrap()], vec![t.unwrap()]),
@@ -814,7 +840,7 @@ impl ASTChecker {
                         (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
                             Meaning {
                                 t: Type::Float,
-                                v: Value::Float(n1 as f32 + n2),
+                                v: Value::Float(n1 as f64 + n2),
                                 e: Effect::Pure,
                             }
                         }
@@ -872,7 +898,7 @@ impl ASTChecker {
                         (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
                             Meaning {
                                 t: Type::Float,
-                                v: Value::Float(n1 as f32 - n2),
+                                v: Value::Float(n1 as f64 - n2),
                                 e: Effect::Pure,
                             }
                         }
@@ -919,7 +945,7 @@ impl ASTChecker {
                         (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
                             Meaning {
                                 t: Type::Float,
-                                v: Value::Float(n1 as f32 * n2),
+                                v: Value::Float(n1 as f64 * n2),
                                 e: Effect::Pure,
                             }
                         }
@@ -988,7 +1014,7 @@ impl ASTChecker {
                         (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
                             Meaning {
                                 t: Type::Float,
-                                v: Value::Float(n1 as f32 / n2),
+                                v: Value::Float(n1 as f64 / n2),
                                 e: Effect::Pure,
                             }
                         }
@@ -1040,13 +1066,13 @@ impl ASTChecker {
                     (Type::Int | Type::Float, Type::Int | Type::Float) => match (op1.v, op2.v) {
                         (Value::Int(n1), Value::Int(n2)) => Meaning {
                             t: Type::Int,
-                            v: Value::Float((n1 as f32).powi(n2)),
+                            v: Value::Float((n1 as f64).powi(n2)),
                             e: Effect::Pure,
                         },
                         (Value::Int(n1), Value::Float(n2)) | (Value::Float(n2), Value::Int(n1)) => {
                             Meaning {
                                 t: Type::Float,
-                                v: Value::Float((n1 as f32).powf(n2)),
+                                v: Value::Float((n1 as f64).powf(n2)),
                                 e: Effect::Pure,
                             }
                         }
@@ -1124,12 +1150,12 @@ impl ASTChecker {
                         },
                         (Value::Int(n1), Value::Float(n2)) => Meaning {
                             t: Type::Bool,
-                            v: Value::Bool(n1 as f32 > n2),
+                            v: Value::Bool(n1 as f64 > n2),
                             e: Effect::Pure,
                         },
                         (Value::Float(n1), Value::Int(n2)) => Meaning {
                             t: Type::Bool,
-                            v: Value::Bool(n1 > n2 as f32),
+                            v: Value::Bool(n1 > n2 as f64),
                             e: Effect::Pure,
                         },
                         (Value::Float(n1), Value::Float(n2)) => Meaning {
@@ -1163,12 +1189,12 @@ impl ASTChecker {
                         },
                         (Value::Int(n1), Value::Float(n2)) => Meaning {
                             t: Type::Bool,
-                            v: Value::Bool(n1 as f32 >= n2),
+                            v: Value::Bool(n1 as f64 >= n2),
                             e: Effect::Pure,
                         },
                         (Value::Float(n1), Value::Int(n2)) => Meaning {
                             t: Type::Bool,
-                            v: Value::Bool(n1 >= n2 as f32),
+                            v: Value::Bool(n1 >= n2 as f64),
                             e: Effect::Pure,
                         },
                         (Value::Float(n1), Value::Float(n2)) => Meaning {
@@ -1202,12 +1228,12 @@ impl ASTChecker {
                         },
                         (Value::Int(n1), Value::Float(n2)) => Meaning {
                             t: Type::Bool,
-                            v: Value::Bool((n1 as f32) < n2),
+                            v: Value::Bool((n1 as f64) < n2),
                             e: Effect::Pure,
                         },
                         (Value::Float(n1), Value::Int(n2)) => Meaning {
                             t: Type::Bool,
-                            v: Value::Bool(n1 < n2 as f32),
+                            v: Value::Bool(n1 < n2 as f64),
                             e: Effect::Pure,
                         },
                         (Value::Float(n1), Value::Float(n2)) => Meaning {
@@ -1241,12 +1267,12 @@ impl ASTChecker {
                         },
                         (Value::Int(n1), Value::Float(n2)) => Meaning {
                             t: Type::Bool,
-                            v: Value::Bool(n1 as f32 <= n2),
+                            v: Value::Bool(n1 as f64 <= n2),
                             e: Effect::Pure,
                         },
                         (Value::Float(n1), Value::Int(n2)) => Meaning {
                             t: Type::Bool,
-                            v: Value::Bool(n1 <= n2 as f32),
+                            v: Value::Bool(n1 <= n2 as f64),
                             e: Effect::Pure,
                         },
                         (Value::Float(n1), Value::Float(n2)) => Meaning {

@@ -25,7 +25,7 @@ fn main() {
 
         parse.parse();
 
-        let mut check = semilagen::ASTChecker::new();
+        let mut check = semilagen::Interpreter::new();
         check.check(parse.tree.clone());
     }
 }
