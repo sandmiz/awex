@@ -56,6 +56,28 @@ pub struct Meaning {
     e: Effect,
 }
 
+impl Type {
+    fn bytesize(&self) -> u8 {
+        match self {
+            Type::Bool => 1,
+            Type::Int => 4,
+            Type::Float => 8,
+            Type::Tuple(types) => {
+                let mut size = 0;
+                for t in types {
+                    size += t.bytesize();
+                }
+                size
+            }
+            Type::List(_) => 4,
+            Type::String => 4,
+            Type::Shard(_, _) => 4,
+            Type::Jack => 4,
+            _ => panic!("Unsizeable"),
+        }
+    }
+}
+
 impl PartialOrd for Effect {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self == other {
@@ -123,10 +145,7 @@ enum Operation {
     StrStack(u8, u32),
     AllocStack(u32),
     PurgeStack(u32),
-
 }
-
-
 
 pub struct Interpreter {
     global: Rc<RefCell<Table>>,
@@ -150,7 +169,7 @@ impl Interpreter {
             alloc_heap: true,
             heap: 0,
             stack: 0,
-            registers: 0
+            registers: 0,
         }
     }
 
@@ -356,7 +375,7 @@ impl Interpreter {
                             0 => {
                                 if let Value::Bool(b) = child_meaning.v {
                                     self.alloc_heap = true;
-                self.stack = 0;
+                                    self.stack = 0;
                                     state = if b { 1 } else { 2 };
                                 } else {
                                     self.alloc_heap = false;
@@ -377,7 +396,7 @@ impl Interpreter {
                             3 | 5 => {
                                 if let Value::Bool(b) = child_meaning.v {
                                     self.alloc_heap = true;
-                self.stack = 0;
+                                    self.stack = 0;
                                     state = if b { 4 } else { 2 }
                                 } else {
                                     if let Value::Outcome(_) = child_meaning.v {
@@ -403,7 +422,7 @@ impl Interpreter {
                             }
                             4 => {
                                 self.alloc_heap = true;
-                self.stack = 0;
+                                self.stack = 0;
                                 node.children = node.children[..i].to_vec();
                                 if node.children.len() <= 2 {}
                                 break;
@@ -744,8 +763,8 @@ impl Interpreter {
                             "int" => t = Some(Type::Int),
                             "float" => t = Some(Type::Float),
                             "string" => t = Some(Type::String),
-                            "shard" => t = Some(Type::Shard((), ()))
-                            _ => panic!("Annotation Error {:?}"),
+                            "shard" => t = Some(Type::STB),
+                            _ => panic!("Annotation Error"),
                         },
                         _ => panic!("Annotation Error"),
                     }
