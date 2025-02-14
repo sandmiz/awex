@@ -6,38 +6,48 @@ use std::{
     cell::RefCell,
     cmp::Ordering,
     collections::HashMap,
-    rc::{Rc, Weak},
+    rc::{Rc, Weak}, vec,
 };
 
 use crate::{lexer::Token::*, tree::Node};
 
 #[derive(Debug, PartialEq, Clone)]
 enum Value {
-    Outcome(Vec<Type>),
-    Bool(bool),
-    Int(i32),
-    Float(f64),
-    String(String),
+    // Compiler guide
     Nothing,
-    Heap(u32),
-    Stack(u32),
+    Outcome(Vec<Type>),
     Table,
     Anno(char, String),
+    // State modifier
     Mailbox(Type),
     Continue,
     Break,
+    // Fixed size value
+    Bool(bool),
+    Int(i32),
+    Float(f64),
+    // Buffer
+    String(String),
+    // Memory
+    Heap(u32),
+    Stack(u32),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 enum Type {
+    // Invalid
+    None,
+    // Fixed size value
     Bool,
     Int,
     Float,
-    String,
-    None,
-    List(Box<Type>),
+    // Dynamic size value
     Tuple(Vec<Type>),
+    // Pointer
     Shard(Vec<Type>, Vec<Type>),
+    // Buffer
+    List(Box<Type>),
+    String,
     Jack,
 }
 
@@ -59,9 +69,11 @@ pub struct Meaning {
 impl Type {
     fn bytesize(&self) -> u8 {
         match self {
+            // Fixed size value
             Type::Bool => 1,
             Type::Int => 4,
             Type::Float => 8,
+            // Dynamic size value
             Type::Tuple(types) => {
                 let mut size = 0;
                 for t in types {
@@ -69,10 +81,12 @@ impl Type {
                 }
                 size
             }
-            Type::List(_) => 4,
-            Type::String => 4,
+            // Pointer
             Type::Shard(_, _) => 4,
-            Type::Jack => 4,
+            // Buffer
+            Type::List(_) => 16,
+            Type::String => 16,
+            Type::Jack => 16,
             _ => panic!("Unsizeable"),
         }
     }
@@ -139,12 +153,25 @@ enum Symbol {
     Table(Rc<RefCell<Table>>),
 }
 
-enum Operation {
-    Mov(u8, u32),
-    LdrStack(u8, u32),
-    StrStack(u8, u32),
+enum Instruction {
+    Label(String),
+    Mov(u8, i32),
+    MovLabel(u8, String),
+    LdrStack(u8, i32),
+    StrStack(u32, u32),
     AllocStack(u32),
     PurgeStack(u32),
+    Add(u8, u8),
+    AddVal(u8, i32),
+    Sub(u8, u8),
+    SubVal(u8, i32),
+    Mul(u8, u8),
+    MulVal(u8, i32),
+    Div(u8, u8),
+    DivVal(u8, i32),
+    Cp(u8, i32),
+    Jp(u8, String), // 0 = No flags, 1 = EQ, 2 = GE, 3 = SE, 4 = GT, 5 = ST
+    Ret,
 }
 
 pub struct Interpreter {
@@ -213,6 +240,8 @@ impl Interpreter {
             _List => {
                 let mut inner_t = Type::None;
                 let mut e = Effect::Pure;
+
+                println!("whaaar {:?}", node.children.clone());
 
                 for child in node.children.clone() {
                     let child_meaning = self.check(child);
@@ -620,7 +649,7 @@ impl Interpreter {
                 }
             }
             Shard => {
-                self.check(Rc::clone(&node.children[3]));
+                let def = self.check(Rc::clone(&node.children[2]));
 
                 let pr_local = Rc::clone(&self.local);
                 self.local = Rc::new(RefCell::new(Table {
@@ -629,7 +658,6 @@ impl Interpreter {
                 }));
 
                 let mut args: Vec<Type> = vec![];
-                let mut rets: Vec<Type> = vec![];
                 let mut e = Effect::Pure;
 
                 for arg in node.children[0].borrow().children.clone() {
@@ -640,20 +668,20 @@ impl Interpreter {
                     }
                 }
 
-                for ret in node.children[1].borrow().children.clone() {
-                    let ret_meaning = self.check(ret);
-
-                    if let Type::Shard(ret, _) = ret_meaning.t {
-                        rets.extend(ret);
-                    }
-                }
-
                 let block_effect = self.check(Rc::clone(&node.children[2])).e;
                 if block_effect > e {
                     e = block_effect;
                 }
 
                 self.local = pr_local;
+                
+                match def.t {
+                    Type::Shard(sig, _) => match &sig[0] {
+                        Type::Shard(args_sig, _) if args_sig != &args => panic!("Type Error"),
+                        _ => ()
+                    },
+                    _ => ()
+                }
 
                 Meaning {
                     t: Type::None,
@@ -701,6 +729,7 @@ impl Interpreter {
                 }
             }
             Annotation => {
+                
                 let mut chars = node.token.1.chars();
 
                 let key = chars.next().unwrap();
@@ -758,13 +787,77 @@ impl Interpreter {
                             "proc" => e = Some(Effect::Proc),
                             _ => panic!("Annotation Error"),
                         },
-                        Value::Anno('t', typ) if t.is_none() => match typ.as_str() {
-                            "bool" => t = Some(Type::Bool),
-                            "int" => t = Some(Type::Int),
-                            "float" => t = Some(Type::Float),
-                            "string" => t = Some(Type::String),
-                            "shard" => t = Some(Type::STB),
-                            _ => panic!("Annotation Error"),
+                        Value::Anno('t', typ) if t.is_none() => {
+                            fn parse_type(typ: &str) -> Type {
+                                match typ {
+                                    "bool" => Type::Bool,
+                                    "int" => Type::Int,
+                                    "float" => Type::Float,
+                                    "string" => Type::String,
+                                    "jack" => Type::Jack,
+                                    a if a.starts_with("tuple") => {
+                                        let mut inner_types: Vec<Type> = vec![];
+                                        let mut buf = String::new();
+                                        let mut unclosed_brackets = 0;
+                                        for ch in a[6..(a.len()-1)].chars() {
+                                            match ch {
+                                                ',' | ')' if unclosed_brackets == 0 => {
+                                                    inner_types.push(parse_type(buf.as_str()));
+                                                    buf = String::new();
+                                                }
+                                                '(' => {
+                                                    unclosed_brackets += 1;
+                                                    buf.push(ch);
+                                                },
+                                                ')' => {
+                                                    unclosed_brackets -= 1;
+                                                    buf.push(ch);
+                                                },
+                                                _ => buf.push(ch)
+                                            };
+                                        }
+                                        Type::Tuple(inner_types)
+                                    }
+                                    a if a.starts_with("list") => {
+                                        println!("whatevs {} {}", a.len(), typ);
+                                        Type::List(Box::new(parse_type(&a[5..(a.len()-1)])))
+                                    }
+                                    a if a.starts_with("shard") => {
+                                        let mut inner_types: [Vec<Type>; 2] = Default::default();
+                                        let mut pool = 0;
+                                        let mut buf = String::new();
+                                        let mut unclosed_brackets = 0;
+                                        for ch in a[5..].chars() {
+                                            match ch {
+                                                ',' | ')' if unclosed_brackets == 1 => {
+                                                    inner_types[pool].push(parse_type(buf.as_str()));
+                                                    buf = String::new();
+                                                    if ch == ')' {
+                                                        unclosed_brackets = 0;
+                                                        pool = 1;
+                                                    }
+                                                }
+                                                '(' => {
+                                                    unclosed_brackets += 1;
+                                                    if unclosed_brackets != 1 {
+                                                        buf.push(ch);
+                                                    }
+                                                },
+                                                ')' => {
+                                                    unclosed_brackets -= 1;
+                                                    buf.push(ch);
+                                                },
+                                                _ if unclosed_brackets == 0 => panic!("Annotation Error"),
+                                                _ => buf.push(ch)
+                                            };
+                                        }
+                                        Type::Shard(inner_types[0].clone(), inner_types[1].clone())
+                                    }
+                                    _ => panic!("Annotation Error {:?}", typ),
+                                }
+                            }
+                            t = Some(parse_type(typ.as_str()));
+                            println!("{:?}", t);
                         },
                         _ => panic!("Annotation Error"),
                     }
@@ -778,10 +871,10 @@ impl Interpreter {
 
                 if self.alloc_heap {
                     v = Value::Heap(self.heap);
-                    self.heap += 1;
+                    self.heap += t.clone().unwrap().bytesize() as u32;
                 } else {
                     v = Value::Stack(self.stack);
-                    self.stack += 1;
+                    self.stack += t.clone().unwrap().bytesize() as u32;
                 }
 
                 self.local.set(

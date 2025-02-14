@@ -69,9 +69,4 @@ impl Node {
 
         Rc::new(RefCell::new(node))
     }
-
-    pub fn swap(&mut self, other: Rc<RefCell<Self>>) {
-        self.token = other.borrow().token.clone();
-        self.children = other.borrow().children.clone();
-    }
 }

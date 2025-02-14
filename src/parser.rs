@@ -343,39 +343,19 @@ impl<'a> Parser<'a> {
                         .insert(_Block, String::new())
                         .extend(self.tree_return.clone());
                     if self.cursor == RRound {
-                        if self.adv_cursor() == FatRArrow {
-                            if self.adv_cursor() == LRound {
-                                self.adv_cursor();
-                                if self.args() {
-                                    shard_tree
-                                        .insert(_Block, String::new())
-                                        .extend(self.tree_return.clone());
-                                    if self.cursor == RRound {
-                                        self.adv_cursor();
-                                        if self.block() {
-                                            shard_tree
-                                                .insert(_Block, String::new())
-                                                .extend(self.tree_return.clone());
-                                            if self.cursor == Semicolon {
-                                                if self.adv_cursor() == RArrow {
-                                                    self.adv_cursor();
-                                                    if self.def() {
-                                                        shard_tree.extend(self.tree_return.clone());
-                                                        if self.cursor == Semicolon {
-                                                            self.tree_return = vec![shard_tree];
-                                                            true
-                                                        } else {
-                                                            panic!("Syntax Error")
-                                                        }
-                                                    } else {
-                                                        panic!("Syntax Error")
-                                                    }
-                                                } else {
-                                                    panic!("Syntax Error")
-                                                }
-                                            } else {
-                                                panic!("Syntax Error")
-                                            }
+                        self.adv_cursor();
+                        if self.block() {
+                            shard_tree
+                                .insert(_Block, String::new())
+                                .extend(self.tree_return.clone());
+                            if self.cursor == Semicolon {
+                                if self.adv_cursor() == RArrow {
+                                    self.adv_cursor();
+                                    if self.def() {
+                                        shard_tree.extend(self.tree_return.clone());
+                                        if self.cursor == Semicolon {
+                                            self.tree_return = vec![shard_tree];
+                                            true
                                         } else {
                                             panic!("Syntax Error")
                                         }
@@ -945,11 +925,11 @@ impl<'a> Parser<'a> {
         } else if self.def() {
             true
         } else if self.cursor == LSquare {
+            let list = Node::new(_List, String::new());
             if [Int, Float, Str, Bool, Nothing].contains(&self.adv_cursor()) {
+                list.insert(self.cursor, self.buf.clone());
                 self.adv_cursor();
                 if self.item() {
-                    let list = Node::new(_List, String::new());
-
                     list.extend(self.tree_return.clone());
 
                     if self.cursor == RSquare {

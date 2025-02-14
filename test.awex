@@ -1,3 +1,5 @@
-shard (#!c t@int e@pure;) => (#!c t@int e@pure;)
+shard (#!v t@list(int) e@pure;)
 
-; -> #!c t@shard e@pure;
+; -> #!c t@shard(list(int))(int) e@pure;
+
+[0] -> c -> sd #!i t@int e@pure;:i;;
