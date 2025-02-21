@@ -6,7 +6,9 @@ use std::{
     cell::RefCell,
     cmp::Ordering,
     collections::HashMap,
-    rc::{Rc, Weak}, vec,
+    default,
+    rc::{Rc, Weak},
+    vec,
 };
 
 use crate::{lexer::Token::*, tree::Node};
@@ -29,7 +31,7 @@ enum Value {
     // Buffer
     String(String),
     // Memory
-    Heap(u32),
+    Heap(String),
     Stack(u32),
 }
 
@@ -153,8 +155,10 @@ enum Symbol {
     Table(Rc<RefCell<Table>>),
 }
 
+#[derive(Clone)]
 enum Instruction {
     Label(String),
+    Alloc(u8),
     Mov(u8, i32),
     MovLabel(u8, String),
     LdrStack(u8, i32),
@@ -181,6 +185,8 @@ pub struct Interpreter {
     heap: u32,
     stack: u32,
     registers: u32,
+    instructions: [Vec<Instruction>; 3],
+    istr_cursor: Vec<Instruction>,
 }
 
 impl Interpreter {
@@ -197,6 +203,8 @@ impl Interpreter {
             heap: 0,
             stack: 0,
             registers: 0,
+            instructions: Default::default(),
+            istr_cursor: vec![],
         }
     }
 
@@ -207,9 +215,11 @@ impl Interpreter {
             _SOF | _Block => {
                 let mut e = Effect::Pure;
                 let mut returns: Vec<Type> = vec![];
+                let mut instructions: Vec<Instruction> = vec![];
 
                 for child in node.children.clone() {
                     let child_meaning = self.check(child);
+                    instructions.extend(self.istr_cursor.clone());
 
                     match child_meaning.v {
                         Value::Mailbox(t) => {
@@ -229,8 +239,7 @@ impl Interpreter {
                     }
                 }
 
-                println!("{:?}", returns);
-
+                self.istr_cursor = instructions;
                 Meaning {
                     t: Type::None,
                     v: Value::Outcome(returns),
@@ -395,6 +404,12 @@ impl Interpreter {
                 let mut outcome: Option<Value> = None;
                 let mut has_else = false;
 
+                let pr_local = self.local.clone();
+                let pr_alloc_heap = self.alloc_heap;
+                let pr_stack = self.stack;
+
+                self.local = self.local.add_table(None);
+
                 for child in node.children.clone() {
                     let child_meaning = self.check(Rc::clone(&child));
 
@@ -403,8 +418,8 @@ impl Interpreter {
                         match state {
                             0 => {
                                 if let Value::Bool(b) = child_meaning.v {
-                                    self.alloc_heap = true;
-                                    self.stack = 0;
+                                    self.alloc_heap = pr_alloc_heap;
+                                    self.stack = pr_stack;
                                     state = if b { 1 } else { 2 };
                                 } else {
                                     self.alloc_heap = false;
@@ -424,8 +439,8 @@ impl Interpreter {
                             }
                             3 | 5 => {
                                 if let Value::Bool(b) = child_meaning.v {
-                                    self.alloc_heap = true;
-                                    self.stack = 0;
+                                    self.alloc_heap = pr_alloc_heap;
+                                    self.stack = pr_stack;
                                     state = if b { 4 } else { 2 }
                                 } else {
                                     if let Value::Outcome(_) = child_meaning.v {
@@ -450,8 +465,8 @@ impl Interpreter {
                                 i += 1;
                             }
                             4 => {
-                                self.alloc_heap = true;
-                                self.stack = 0;
+                                self.alloc_heap = pr_alloc_heap;
+                                self.stack = pr_stack;
                                 node.children = node.children[..i].to_vec();
                                 if node.children.len() <= 2 {}
                                 break;
@@ -467,8 +482,9 @@ impl Interpreter {
                     }
                 }
 
-                self.alloc_heap = true;
-                self.stack = 0;
+                self.local = pr_local;
+                self.alloc_heap = pr_alloc_heap;
+                self.stack = pr_stack;
 
                 if outcome != Some(Value::Outcome(vec![])) && !has_else {
                     panic!("Inconsistent Outcome Error")
@@ -481,6 +497,11 @@ impl Interpreter {
                 }
             }
             For => {
+                let pr_local = self.local.clone();
+                let pr_alloc_heap = self.alloc_heap;
+                let pr_stack = self.stack;
+
+                self.local = self.local.add_table(None);
                 self.alloc_heap = false;
 
                 let mut e = Effect::Pure;
@@ -509,8 +530,9 @@ impl Interpreter {
                     e = block.e;
                 }
 
-                self.alloc_heap = true;
-                self.stack = 0;
+                self.local = pr_local;
+                self.alloc_heap = pr_alloc_heap;
+                self.stack = pr_stack;
 
                 Meaning {
                     v: Value::Nothing,
@@ -519,6 +541,11 @@ impl Interpreter {
                 }
             }
             ForEach => {
+                let pr_local = self.local.clone();
+                let pr_alloc_heap = self.alloc_heap;
+                let pr_stack = self.stack;
+
+                self.local = self.local.add_table(None);
                 self.alloc_heap = false;
 
                 let mut e = Effect::Pure;
@@ -545,8 +572,9 @@ impl Interpreter {
                     e = block.e;
                 }
 
-                self.alloc_heap = true;
-                self.stack = 0;
+                self.local = pr_local;
+                self.alloc_heap = pr_alloc_heap;
+                self.stack = pr_stack;
 
                 Meaning {
                     v: Value::Nothing,
@@ -555,7 +583,12 @@ impl Interpreter {
                 }
             }
             Forever => {
+                let pr_local = self.local.clone();
+                let pr_alloc_heap = self.alloc_heap;
+                let pr_stack = self.stack;
+
                 self.alloc_heap = false;
+                self.local = self.local.add_table(None);
 
                 let mut e = Effect::Pure;
                 let mut iter = node.children.iter().map(|x| self.check(x.clone()));
@@ -568,8 +601,9 @@ impl Interpreter {
                     e = block.e;
                 }
 
-                self.alloc_heap = true;
-                self.stack = 0;
+                self.local = pr_local;
+                self.alloc_heap = pr_alloc_heap;
+                self.stack = pr_stack;
 
                 Meaning {
                     v: Value::Nothing,
@@ -578,7 +612,12 @@ impl Interpreter {
                 }
             }
             While => {
+                let pr_local = self.local.clone();
+                let pr_alloc_heap = self.alloc_heap;
+                let pr_stack = self.stack;
+
                 self.alloc_heap = false;
+                self.local = self.local.add_table(None);
 
                 let mut e = Effect::Pure;
                 let mut iter = node.children.iter().map(|x| self.check(x.clone()));
@@ -604,8 +643,9 @@ impl Interpreter {
                     e = block.e;
                 }
 
-                self.alloc_heap = true;
-                self.stack = 0;
+                self.local = pr_local;
+                self.alloc_heap = pr_alloc_heap;
+                self.stack = pr_stack;
 
                 Meaning {
                     v: Value::Nothing,
@@ -617,6 +657,11 @@ impl Interpreter {
                 let mut e = Effect::Pure;
                 let mut match_t: Option<Type> = None;
 
+                let pr_local = self.local.clone();
+                let pr_alloc_heap = self.alloc_heap;
+                let pr_stack = self.stack;
+
+                self.local = self.local.add_table(None);
                 self.alloc_heap = false;
 
                 for child in node.children.clone() {
@@ -639,8 +684,9 @@ impl Interpreter {
                     }
                 }
 
-                self.alloc_heap = true;
-                self.stack = 0;
+                self.local = pr_local;
+                self.alloc_heap = pr_alloc_heap;
+                self.stack = pr_stack;
 
                 Meaning {
                     v: Value::Nothing,
@@ -656,6 +702,11 @@ impl Interpreter {
                     parent: None,
                     map: HashMap::new(),
                 }));
+                let pr_alloc_heap = self.alloc_heap;
+                let pr_stack = self.stack;
+
+                self.local = self.local.add_table(None);
+                self.alloc_heap = false;
 
                 let mut args: Vec<Type> = vec![];
                 let mut e = Effect::Pure;
@@ -674,13 +725,15 @@ impl Interpreter {
                 }
 
                 self.local = pr_local;
-                
+                self.alloc_heap = pr_alloc_heap;
+                self.stack = pr_stack;
+
                 match def.t {
                     Type::Shard(sig, _) => match &sig[0] {
                         Type::Shard(args_sig, _) if args_sig != &args => panic!("Type Error"),
-                        _ => ()
+                        _ => (),
                     },
-                    _ => ()
+                    _ => (),
                 }
 
                 Meaning {
@@ -729,7 +782,6 @@ impl Interpreter {
                 }
             }
             Annotation => {
-                
                 let mut chars = node.token.1.chars();
 
                 let key = chars.next().unwrap();
@@ -799,7 +851,7 @@ impl Interpreter {
                                         let mut inner_types: Vec<Type> = vec![];
                                         let mut buf = String::new();
                                         let mut unclosed_brackets = 0;
-                                        for ch in a[6..(a.len()-1)].chars() {
+                                        for ch in a[6..(a.len() - 1)].chars() {
                                             match ch {
                                                 ',' | ')' if unclosed_brackets == 0 => {
                                                     inner_types.push(parse_type(buf.as_str()));
@@ -808,19 +860,19 @@ impl Interpreter {
                                                 '(' => {
                                                     unclosed_brackets += 1;
                                                     buf.push(ch);
-                                                },
+                                                }
                                                 ')' => {
                                                     unclosed_brackets -= 1;
                                                     buf.push(ch);
-                                                },
-                                                _ => buf.push(ch)
+                                                }
+                                                _ => buf.push(ch),
                                             };
                                         }
                                         Type::Tuple(inner_types)
                                     }
                                     a if a.starts_with("list") => {
                                         println!("whatevs {} {}", a.len(), typ);
-                                        Type::List(Box::new(parse_type(&a[5..(a.len()-1)])))
+                                        Type::List(Box::new(parse_type(&a[5..(a.len() - 1)])))
                                     }
                                     a if a.starts_with("shard") => {
                                         let mut inner_types: [Vec<Type>; 2] = Default::default();
@@ -830,7 +882,8 @@ impl Interpreter {
                                         for ch in a[5..].chars() {
                                             match ch {
                                                 ',' | ')' if unclosed_brackets == 1 => {
-                                                    inner_types[pool].push(parse_type(buf.as_str()));
+                                                    inner_types[pool]
+                                                        .push(parse_type(buf.as_str()));
                                                     buf = String::new();
                                                     if ch == ')' {
                                                         unclosed_brackets = 0;
@@ -842,13 +895,15 @@ impl Interpreter {
                                                     if unclosed_brackets != 1 {
                                                         buf.push(ch);
                                                     }
-                                                },
+                                                }
                                                 ')' => {
                                                     unclosed_brackets -= 1;
                                                     buf.push(ch);
-                                                },
-                                                _ if unclosed_brackets == 0 => panic!("Annotation Error"),
-                                                _ => buf.push(ch)
+                                                }
+                                                _ if unclosed_brackets == 0 => {
+                                                    panic!("Annotation Error")
+                                                }
+                                                _ => buf.push(ch),
                                             };
                                         }
                                         Type::Shard(inner_types[0].clone(), inner_types[1].clone())
@@ -858,7 +913,7 @@ impl Interpreter {
                             }
                             t = Some(parse_type(typ.as_str()));
                             println!("{:?}", t);
-                        },
+                        }
                         _ => panic!("Annotation Error"),
                     }
                 }
@@ -870,8 +925,8 @@ impl Interpreter {
                 let v: Value;
 
                 if self.alloc_heap {
-                    v = Value::Heap(self.heap);
-                    self.heap += t.clone().unwrap().bytesize() as u32;
+                    v = Value::Heap(format!("L_{}", self.heap));
+                    self.heap += 1;
                 } else {
                     v = Value::Stack(self.stack);
                     self.stack += t.clone().unwrap().bytesize() as u32;
