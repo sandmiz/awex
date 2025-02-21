@@ -17,11 +17,11 @@ use crate::{lexer::Token::*, tree::Node};
 enum Value {
     // Compiler guide
     Nothing,
-    Outcome(Vec<Type>),
+    Outcome(Vec<Type>, Vec<Instruction>),
     Table,
     Anno(char, String),
     // State modifier
-    Mailbox(Type),
+    Mailbox(Type, Box<Value>),
     Continue,
     Break,
     // Fixed size value
@@ -155,14 +155,14 @@ enum Symbol {
     Table(Rc<RefCell<Table>>),
 }
 
-#[derive(Clone)]
+#[derive(Debug, PartialEq, Clone)]
 enum Instruction {
     Label(String),
     Alloc(u8),
     Mov(u8, i32),
     MovLabel(u8, String),
-    LdrStack(u8, i32),
-    StrStack(u32, u32),
+    LdrStack(u8, u32),
+    StrStack(u32, u8),
     AllocStack(u32),
     PurgeStack(u32),
     Add(u8, u8),
@@ -184,9 +184,8 @@ pub struct Interpreter {
     alloc_heap: bool,
     heap: u32,
     stack: u32,
-    registers: u32,
-    instructions: [Vec<Instruction>; 3],
-    istr_cursor: Vec<Instruction>,
+    registers: u8,
+    instructions: Vec<Instruction>,
 }
 
 impl Interpreter {
@@ -204,7 +203,6 @@ impl Interpreter {
             stack: 0,
             registers: 0,
             instructions: Default::default(),
-            istr_cursor: vec![],
         }
     }
 
@@ -219,14 +217,69 @@ impl Interpreter {
 
                 for child in node.children.clone() {
                     let child_meaning = self.check(child);
-                    instructions.extend(self.istr_cursor.clone());
 
                     match child_meaning.v {
-                        Value::Mailbox(t) => {
+                        Value::Mailbox(t, v) => {
                             returns.push(t);
+                            match *v {
+                                Value::Stack(addr) => {
+                                    self.registers += 1;
+                                    let start = self.stack + 1;
+                                    self.stack += t.bytesize() as u32;
+                                    
+                                    for i in (start..self.stack).step_by(4) {
+                                        self.instructions.push(Instruction::LdrStack(self.registers, addr));
+                                        self.instructions.push(Instruction::StrStack(i, self.registers));
+                                    }
+
+                                    self.registers -= 1;
+                                }
+                                Value::Heap(addr) => {
+                                    self.registers += 1;
+                                    let start = self.stack + 1;
+                                    self.stack += t.bytesize() as u32;
+                                    
+                                    for i in (start..self.stack).step_by(4) {
+                                        self.instructions.push(Instruction::MovLabel(self.registers, addr));
+                                        self.instructions.push(Instruction::StrStack(i, self.registers));
+                                    }
+
+                                    self.registers -= 1;
+                                }
+                                Value::Int(val) => {
+                                    self.registers += 1;
+                                    self.stack += 4;
+
+                                    self.instructions.push(Instruction::Mov(self.registers, val));
+                                    self.instructions.push(Instruction::StrStack(self.stack - 4, self.registers));
+
+                                    self.registers -= 1;
+                                }
+                                Value::Bool(val) => {
+                                    self.registers += 1;
+                                    self.stack += 4;
+
+                                    self.instructions.push(Instruction::Mov(self.registers, val as i32));
+                                    self.instructions.push(Instruction::StrStack(self.stack - 4, self.registers));
+
+                                    self.registers -= 1;
+                                }
+                                Value::Float(val) => {
+                                    self.registers += 1;
+                                    self.stack += 8;
+
+                                    for i in (self.stack-8..self.stack).step_by(4) {
+                                        self.instructions.push(Instruction::Mov(self.registers, i32::from_be_bytes(val.to_be_bytes()[i as usize..i as usize+4].try_into().unwrap())));
+                                        self.instructions.push(Instruction::StrStack(self.stack - 4, self.registers));
+                                    }
+
+                                    self.registers -= 1;
+                                }
+                            }
                         }
-                        Value::Outcome(t_vec) => {
+                        Value::Outcome(t_vec, i_vec) => {
                             returns.extend(t_vec);
+                            instructions.extend(i_vec);
                         }
                         Value::Break => {
                             break;
@@ -238,11 +291,9 @@ impl Interpreter {
                         e = child_meaning.e;
                     }
                 }
-
-                self.istr_cursor = instructions;
                 Meaning {
                     t: Type::None,
-                    v: Value::Outcome(returns),
+                    v: Value::Outcome(returns, instructions),
                     e,
                 }
             }
