@@ -6,7 +6,6 @@ use std::{
     cell::RefCell,
     cmp::Ordering,
     collections::HashMap,
-    default,
     rc::{Rc, Weak},
     vec,
 };
@@ -31,8 +30,8 @@ enum Value {
     // Buffer
     String(String),
     // Memory
-    Heap(String),
-    Stack(u32),
+    Long(usize),
+    Short(u32),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -68,32 +67,6 @@ pub struct Meaning {
     e: Effect,
 }
 
-impl Type {
-    fn bytesize(&self) -> u8 {
-        match self {
-            // Fixed size value
-            Type::Bool => 1,
-            Type::Int => 4,
-            Type::Float => 8,
-            // Dynamic size value
-            Type::Tuple(types) => {
-                let mut size = 0;
-                for t in types {
-                    size += t.bytesize();
-                }
-                size
-            }
-            // Pointer
-            Type::Shard(_, _) => 4,
-            // Buffer
-            Type::List(_) => 16,
-            Type::String => 16,
-            Type::Jack => 16,
-            _ => panic!("Unsizeable"),
-        }
-    }
-}
-
 impl PartialOrd for Effect {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self == other {
@@ -119,7 +92,7 @@ trait TableRc {
 
 impl TableRc for Rc<RefCell<Table>> {
     fn get(&self, key: String) -> Option<Symbol> {
-        if key == "_".to_owned() {
+        if key == "_prnt".to_owned() {
             match self.borrow().parent.clone() {
                 Some(parent) => Some(Symbol::Table(parent.upgrade().unwrap())),
                 None => None,
@@ -157,35 +130,26 @@ enum Symbol {
 
 #[derive(Debug, PartialEq, Clone)]
 enum Instruction {
+    Assign(Value, Value),
     Label(String),
-    Alloc(u8),
-    Mov(u8, i32),
-    MovLabel(u8, String),
-    LdrStack(u8, u32),
-    StrStack(u32, u8),
-    AllocStack(u32),
-    PurgeStack(u32),
-    Add(u8, u8),
-    AddVal(u8, i32),
-    Sub(u8, u8),
-    SubVal(u8, i32),
-    Mul(u8, u8),
-    MulVal(u8, i32),
-    Div(u8, u8),
-    DivVal(u8, i32),
-    Cp(u8, i32),
-    Jp(u8, String), // 0 = No flags, 1 = EQ, 2 = GE, 3 = SE, 4 = GT, 5 = ST
     Ret,
+    Add(Value, Value, Value),
+    Sub(Value, Value, Value),
+    Mul(Value, Value, Value),
+    Div(Value, Value, Value),
+    Pow(Value, Value, Value),
+    Push(Value, String),
+    Comp(u8, Value, Value),
+    Jump(bool, String)
 }
 
 pub struct Interpreter {
     global: Rc<RefCell<Table>>,
     local: Rc<RefCell<Table>>,
-    alloc_heap: bool,
-    heap: u32,
-    stack: u32,
-    registers: u8,
-    instructions: Vec<Instruction>,
+    alloc_long: bool,
+    long: usize,
+    short: u16,
+    pub instructions: Vec<Instruction>,
 }
 
 impl Interpreter {
@@ -198,10 +162,9 @@ impl Interpreter {
         Interpreter {
             global: Rc::clone(&global),
             local: Rc::clone(&global),
-            alloc_heap: true,
-            heap: 0,
-            stack: 0,
-            registers: 0,
+            alloc_long: true,
+            long: 0,
+            short: 0,
             instructions: Default::default(),
         }
     }
@@ -222,58 +185,58 @@ impl Interpreter {
                         Value::Mailbox(t, v) => {
                             returns.push(t);
                             match *v {
-                                Value::Stack(addr) => {
-                                    self.registers += 1;
-                                    let start = self.stack + 1;
-                                    self.stack += t.bytesize() as u32;
+                                Value::short(addr) => {
+                                    self.short += 1;
+                                    let start = self.short + 1;
+                                    self.short += t.bytesize() as u32;
                                     
-                                    for i in (start..self.stack).step_by(4) {
-                                        self.instructions.push(Instruction::LdrStack(self.registers, addr));
-                                        self.instructions.push(Instruction::StrStack(i, self.registers));
+                                    for i in (start..self.short).step_by(4) {
+                                        self.instructions.push(Instruction::Ldrshort(self.short, addr));
+                                        self.instructions.push(Instruction::Strshort(i, self.short));
                                     }
 
-                                    self.registers -= 1;
+                                    self.short -= 1;
                                 }
-                                Value::Heap(addr) => {
-                                    self.registers += 1;
-                                    let start = self.stack + 1;
-                                    self.stack += t.bytesize() as u32;
+                                Value::long(addr) => {
+                                    self.short += 1;
+                                    let start = self.short + 1;
+                                    self.short += t.bytesize() as u32;
                                     
-                                    for i in (start..self.stack).step_by(4) {
-                                        self.instructions.push(Instruction::MovLabel(self.registers, addr));
-                                        self.instructions.push(Instruction::StrStack(i, self.registers));
+                                    for i in (start..self.short).step_by(4) {
+                                        self.instructions.push(Instruction::MovLabel(self.short, addr));
+                                        self.instructions.push(Instruction::Strshort(i, self.short));
                                     }
 
-                                    self.registers -= 1;
+                                    self.short -= 1;
                                 }
                                 Value::Int(val) => {
-                                    self.registers += 1;
-                                    self.stack += 4;
+                                    self.short += 1;
+                                    self.short += 4;
 
-                                    self.instructions.push(Instruction::Mov(self.registers, val));
-                                    self.instructions.push(Instruction::StrStack(self.stack - 4, self.registers));
+                                    self.instructions.push(Instruction::Mov(self.short, val));
+                                    self.instructions.push(Instruction::Strshort(self.short - 4, self.short));
 
-                                    self.registers -= 1;
+                                    self.short -= 1;
                                 }
                                 Value::Bool(val) => {
-                                    self.registers += 1;
-                                    self.stack += 4;
+                                    self.short += 1;
+                                    self.short += 4;
 
-                                    self.instructions.push(Instruction::Mov(self.registers, val as i32));
-                                    self.instructions.push(Instruction::StrStack(self.stack - 4, self.registers));
+                                    self.instructions.push(Instruction::Mov(self.short, val as i32));
+                                    self.instructions.push(Instruction::Strshort(self.short - 4, self.short));
 
-                                    self.registers -= 1;
+                                    self.short -= 1;
                                 }
                                 Value::Float(val) => {
-                                    self.registers += 1;
-                                    self.stack += 8;
+                                    self.short += 1;
+                                    self.short += 8;
 
-                                    for i in (self.stack-8..self.stack).step_by(4) {
-                                        self.instructions.push(Instruction::Mov(self.registers, i32::from_be_bytes(val.to_be_bytes()[i as usize..i as usize+4].try_into().unwrap())));
-                                        self.instructions.push(Instruction::StrStack(self.stack - 4, self.registers));
+                                    for i in (self.short-8..self.short).step_by(4) {
+                                        self.instructions.push(Instruction::Mov(self.short, i32::from_be_bytes(val.to_be_bytes()[i as usize..i as usize+4].try_into().unwrap())));
+                                        self.instructions.push(Instruction::Strshort(self.short - 4, self.short));
                                     }
 
-                                    self.registers -= 1;
+                                    self.short -= 1;
                                 }
                             }
                         }
@@ -358,7 +321,7 @@ impl Interpreter {
 
                 let expr_meaning = self.check(node.children[1].clone());
 
-                if let Some(Symbol::Table(table)) = self.local.get("_".to_owned()) {
+                if let Some(Symbol::Table(table)) = self.local.get("_prnt".to_owned()) {
                     self.local = Rc::clone(&table);
                 } else {
                     panic!("Bug")
@@ -381,7 +344,7 @@ impl Interpreter {
                             None,
                             Meaning {
                                 t: _,
-                                v: Value::Heap(_) | Value::Stack(_) | Value::Table,
+                                v: Value::long(_) | Value::short(_) | Value::Table,
                                 e: _,
                             }
                             | Meaning {
@@ -432,7 +395,7 @@ impl Interpreter {
                         }
                         Some(Symbol::Meaning(meaning)) => meaning,
                         None => {
-                            if let Some(Symbol::Table(table)) = ast.local.get("_".to_owned()) {
+                            if let Some(Symbol::Table(table)) = ast.local.get("_prnt".to_owned()) {
                                 ast.local = table;
 
                                 search(ast, node)
@@ -456,8 +419,8 @@ impl Interpreter {
                 let mut has_else = false;
 
                 let pr_local = self.local.clone();
-                let pr_alloc_heap = self.alloc_heap;
-                let pr_stack = self.stack;
+                let pr_alloc_long = self.alloc_long;
+                let pr_short = self.short;
 
                 self.local = self.local.add_table(None);
 
@@ -469,11 +432,11 @@ impl Interpreter {
                         match state {
                             0 => {
                                 if let Value::Bool(b) = child_meaning.v {
-                                    self.alloc_heap = pr_alloc_heap;
-                                    self.stack = pr_stack;
+                                    self.alloc_long = pr_alloc_long;
+                                    self.short = pr_short;
                                     state = if b { 1 } else { 2 };
                                 } else {
-                                    self.alloc_heap = false;
+                                    self.alloc_long = false;
                                     state = 3;
                                 }
                                 i += 1;
@@ -490,25 +453,26 @@ impl Interpreter {
                             }
                             3 | 5 => {
                                 if let Value::Bool(b) = child_meaning.v {
-                                    self.alloc_heap = pr_alloc_heap;
-                                    self.stack = pr_stack;
+                                    self.alloc_long = pr_alloc_long;
+                                    self.short = pr_short;
                                     state = if b { 4 } else { 2 }
                                 } else {
-                                    if let Value::Outcome(_) = child_meaning.v {
+                                    if let Value::Outcome(o1, _) = child_meaning.v {
                                         if state == 5 {
                                             has_else = true;
                                         }
+                                        // TODO: REVAMP THE THING!!!!
                                         match outcome {
                                             None => {
                                                 outcome = Some(child_meaning.v);
                                             }
-                                            Some(block_out) if block_out == child_meaning.v => {
+                                            Some(Value::Outcome(o2, _)) if o1 == o2 => {
                                                 outcome = Some(child_meaning.v);
                                             }
                                             _ => panic!("Inconsistent Outcome Error"),
                                         }
                                     }
-                                    self.alloc_heap = false;
+                                    self.alloc_long = false;
                                     state = 5;
                                 }
 
@@ -516,8 +480,8 @@ impl Interpreter {
                                 i += 1;
                             }
                             4 => {
-                                self.alloc_heap = pr_alloc_heap;
-                                self.stack = pr_stack;
+                                self.alloc_long = pr_alloc_long;
+                                self.short = pr_short;
                                 node.children = node.children[..i].to_vec();
                                 if node.children.len() <= 2 {}
                                 break;
@@ -534,8 +498,8 @@ impl Interpreter {
                 }
 
                 self.local = pr_local;
-                self.alloc_heap = pr_alloc_heap;
-                self.stack = pr_stack;
+                self.alloc_long = pr_alloc_long;
+                self.short = pr_short;
 
                 if outcome != Some(Value::Outcome(vec![])) && !has_else {
                     panic!("Inconsistent Outcome Error")
@@ -549,11 +513,11 @@ impl Interpreter {
             }
             For => {
                 let pr_local = self.local.clone();
-                let pr_alloc_heap = self.alloc_heap;
-                let pr_stack = self.stack;
+                let pr_alloc_long = self.alloc_long;
+                let pr_short = self.short;
 
                 self.local = self.local.add_table(None);
-                self.alloc_heap = false;
+                self.alloc_long = false;
 
                 let mut e = Effect::Pure;
                 let mut iter = node.children.iter().map(|x| self.check(x.clone()));
@@ -582,8 +546,8 @@ impl Interpreter {
                 }
 
                 self.local = pr_local;
-                self.alloc_heap = pr_alloc_heap;
-                self.stack = pr_stack;
+                self.alloc_long = pr_alloc_long;
+                self.short = pr_short;
 
                 Meaning {
                     v: Value::Nothing,
@@ -593,11 +557,11 @@ impl Interpreter {
             }
             ForEach => {
                 let pr_local = self.local.clone();
-                let pr_alloc_heap = self.alloc_heap;
-                let pr_stack = self.stack;
+                let pr_alloc_long = self.alloc_long;
+                let pr_short = self.short;
 
                 self.local = self.local.add_table(None);
-                self.alloc_heap = false;
+                self.alloc_long = false;
 
                 let mut e = Effect::Pure;
                 let mut iter = node.children.iter().map(|x| self.check(x.clone()));
@@ -624,8 +588,8 @@ impl Interpreter {
                 }
 
                 self.local = pr_local;
-                self.alloc_heap = pr_alloc_heap;
-                self.stack = pr_stack;
+                self.alloc_long = pr_alloc_long;
+                self.short = pr_short;
 
                 Meaning {
                     v: Value::Nothing,
@@ -635,10 +599,10 @@ impl Interpreter {
             }
             Forever => {
                 let pr_local = self.local.clone();
-                let pr_alloc_heap = self.alloc_heap;
-                let pr_stack = self.stack;
+                let pr_alloc_long = self.alloc_long;
+                let pr_short = self.short;
 
-                self.alloc_heap = false;
+                self.alloc_long = false;
                 self.local = self.local.add_table(None);
 
                 let mut e = Effect::Pure;
@@ -653,8 +617,8 @@ impl Interpreter {
                 }
 
                 self.local = pr_local;
-                self.alloc_heap = pr_alloc_heap;
-                self.stack = pr_stack;
+                self.alloc_long = pr_alloc_long;
+                self.short = pr_short;
 
                 Meaning {
                     v: Value::Nothing,
@@ -664,10 +628,10 @@ impl Interpreter {
             }
             While => {
                 let pr_local = self.local.clone();
-                let pr_alloc_heap = self.alloc_heap;
-                let pr_stack = self.stack;
+                let pr_alloc_long = self.alloc_long;
+                let pr_short = self.short;
 
-                self.alloc_heap = false;
+                self.alloc_long = false;
                 self.local = self.local.add_table(None);
 
                 let mut e = Effect::Pure;
@@ -695,8 +659,8 @@ impl Interpreter {
                 }
 
                 self.local = pr_local;
-                self.alloc_heap = pr_alloc_heap;
-                self.stack = pr_stack;
+                self.alloc_long = pr_alloc_long;
+                self.short = pr_short;
 
                 Meaning {
                     v: Value::Nothing,
@@ -709,11 +673,11 @@ impl Interpreter {
                 let mut match_t: Option<Type> = None;
 
                 let pr_local = self.local.clone();
-                let pr_alloc_heap = self.alloc_heap;
-                let pr_stack = self.stack;
+                let pr_alloc_long = self.alloc_long;
+                let pr_short = self.short;
 
                 self.local = self.local.add_table(None);
-                self.alloc_heap = false;
+                self.alloc_long = false;
 
                 for child in node.children.clone() {
                     let child_meaning = self.check(Rc::clone(&child));
@@ -736,8 +700,8 @@ impl Interpreter {
                 }
 
                 self.local = pr_local;
-                self.alloc_heap = pr_alloc_heap;
-                self.stack = pr_stack;
+                self.alloc_long = pr_alloc_long;
+                self.short = pr_short;
 
                 Meaning {
                     v: Value::Nothing,
@@ -753,11 +717,11 @@ impl Interpreter {
                     parent: None,
                     map: HashMap::new(),
                 }));
-                let pr_alloc_heap = self.alloc_heap;
-                let pr_stack = self.stack;
+                let pr_alloc_long = self.alloc_long;
+                let pr_short = self.short;
 
                 self.local = self.local.add_table(None);
-                self.alloc_heap = false;
+                self.alloc_long = false;
 
                 let mut args: Vec<Type> = vec![];
                 let mut e = Effect::Pure;
@@ -776,8 +740,8 @@ impl Interpreter {
                 }
 
                 self.local = pr_local;
-                self.alloc_heap = pr_alloc_heap;
-                self.stack = pr_stack;
+                self.alloc_long = pr_alloc_long;
+                self.short = pr_short;
 
                 match def.t {
                     Type::Shard(sig, _) => match &sig[0] {
@@ -975,12 +939,12 @@ impl Interpreter {
 
                 let v: Value;
 
-                if self.alloc_heap {
-                    v = Value::Heap(format!("L_{}", self.heap));
-                    self.heap += 1;
+                if self.alloc_long {
+                    v = Value::long(format!("L_{}", self.long));
+                    self.long += 1;
                 } else {
-                    v = Value::Stack(self.stack);
-                    self.stack += t.clone().unwrap().bytesize() as u32;
+                    v = Value::short(self.short);
+                    self.short += t.clone().unwrap().bytesize() as u32;
                 }
 
                 self.local.set(

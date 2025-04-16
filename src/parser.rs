@@ -5,7 +5,7 @@ use crate::{
         self, Lexer,
         Token::{self, *},
     },
-    tree::{Node, NodeRc},
+    tree::{self, Node, NodeRc},
 };
 
 pub struct Parser<'a> {
@@ -455,31 +455,36 @@ impl<'a> Parser<'a> {
 
     fn case(&mut self) -> bool {
         if self.cursor == Case {
+            let mut cases;
             if self.adv_cursor() == LRound {
                 self.adv_cursor();
                 if self.value() {
-                    let mut cases = self.tree_return.clone();
+                    cases = self.tree_return.clone();
                     if self.cursor == RRound {
                         self.adv_cursor();
-                        if self.block() {
-                            cases.push(
-                                Node::new(_Block, String::new()).extend(self.tree_return.clone()),
-                            );
-                            if self.cursor == Semicolon {
-                                self.adv_cursor();
-                                if self.case() {
-                                    cases.extend(self.tree_return.clone());
-                                    self.tree_return = cases;
-                                    true
-                                } else {
-                                    panic!("Syntax Error")
-                                }
-                            } else {
-                                panic!("Syntax Error")
-                            }
-                        } else {
-                            panic!("Syntax Error")
-                        }
+                    } else {
+                        panic!("Syntax Error")
+                    }
+                } else {
+                    panic!("Syntax Error")
+                }
+            } else if self.cursor == Annotation {
+                cases = vec![Node::new(Annotation, self.buf.clone())];
+                self.adv_cursor();
+            } else {
+                panic!("Syntax Error")
+            }
+
+            if self.block() {
+                cases.push(
+                    Node::new(_Block, String::new()).extend(self.tree_return.clone()),
+                );
+                if self.cursor == Semicolon {
+                    self.adv_cursor();
+                    if self.case() {
+                        cases.extend(self.tree_return.clone());
+                        self.tree_return = cases;
+                        true
                     } else {
                         panic!("Syntax Error")
                     }

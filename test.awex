@@ -1,5 +1,16 @@
 shard (#!v t@list(int) e@pure;)
-
-; -> #!c t@shard(list(int))(int) e@pure;
+    ((v -> list::len) -> list::create_list) 
+        -> #!z t@list(int) e@pure;
+    foreach (v -> list::enumerate)
+        _iter::1 + 2 -> #z::(_iter::0);
+    ;
+    >= z;
+; -> #!c t@shard(list(int))(int) e@proc;
 
 [0] -> c -> sd #!i t@int e@pure;:i;;
+
+match (0)
+    case t@int
+        0;
+    ;
+;

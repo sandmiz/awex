@@ -1,6 +1,6 @@
 use clap::Parser;
 use std::fs;
-mod semilagen;
+// mod chkgen;
 mod lexer;
 mod parser;
 mod tree;
@@ -25,7 +25,7 @@ fn main() {
 
         parse.parse();
 
-        let mut check = semilagen::Interpreter::new();
-        check.check(parse.tree.clone());
+        // let mut check = chkgen::Interpreter::new();
+        // check.check(parse.tree.clone());
     }
 }
